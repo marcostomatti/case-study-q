@@ -933,3 +933,50 @@ Adds to the shell-traps section above. A scratch-directory setup that starts
 `rm -rf /tmp/<fixed-name>` is denied outright and the whole compound command
 never runs. Use `mktemp -d` for a fresh path instead of clearing a fixed one —
 it needs no delete, and it also stops two runs from colliding.
+
+## `assertExactContractPins` is the pin gate, and it is DEFAULT-DENY
+
+`packages/contract-tooling/src/pinCheck.ts` exports
+`assertExactContractPins(packageDir)` returning `PinFinding[]`, plus
+`CONTRACT_PACKAGE_PREFIX` (`@marcos-corp/contracts-`). The CI `pins` job,
+`scripts/pipeline-simulation.ts` and acceptance script 05 should call it rather
+than grepping manifests themselves. Unlike gates 2 and 3 it needs no binary, and
+unlike gate 4 it reads a **consumer's** manifest, not a contract package --
+so it runs across `apps/*` and `services/*`, not `packages/contracts-*`.
+
+- **Exactly a semver version passes; everything else is a finding.** Written the
+  obvious way -- reject a leading `^` or `~` -- the gate waves through `*`, `x`,
+  `0.1`, `0.1.x`, `''`, `latest`, `>=0.1.0`, `file:`, `npm:` aliases and
+  `workspace:*`, each of which floats the consumer exactly as far. Measured:
+  that naive classifier reddens 17 of the 39 cases here.
+- `PinFinding.reason` is a four-member union -- `range`, `wildcard`,
+  `workspace-protocol`, `not-a-version` -- so a report can say what to write
+  instead, not only that the pin is wrong. All four dependency fields are
+  scanned; findings sort by field then package name.
+- Same split as the other gates: a bad manifest is a returned finding, a gate
+  that cannot run is a throw prefixed `pin gate cannot run:`. Assert that
+  wording, not just the path -- a bare `ENOENT` from `readFileSync` names
+  `package.json` too and passes a path-only assertion (measured: dropping the
+  try/catch reddens exactly one case, and only because of the wording check).
+- The near-miss worth keeping in any fixture set:
+  `@marcos-corp/contract-tooling` is singular `contract-`, one character short
+  of the governed prefix, and is ranged like any other library. A prefix check
+  written `@marcos-corp/contract` reports it.
+
+## A bare exact pin already resolves to the workspace package, no `workspace:*`
+
+Load-bearing for every consumer manifest still to be written
+(`services/service-b`, `apps/web-a`, `apps/web-b`) and for
+`docs/governance.md`. Measured in a throwaway bun workspace with a negative
+control, because "but does the pin still install" is the objection the
+exact-pin rule always draws:
+
+  "@probe/contracts-x": "0.1.0"   -> symlinked to ../../packages/contracts-x
+  "@probe/contracts-x": "9.9.9"   -> bun install EXITS 1, 404 from npmjs.org
+
+So `workspace:*` buys nothing here: bun links the workspace package whenever the
+declared version matches it. That makes the exact pin cheaper than the protocol
+*and* self-enforcing -- a consumer pinned to a version the workspace no longer
+holds fails `bun install` outright, before any gate runs. Spec section 2.2 is
+therefore enforced twice over, and the gate's job is catching the ranged
+specifier that would have installed fine.
