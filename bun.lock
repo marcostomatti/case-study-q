@@ -58,6 +58,18 @@
         "@types/express": "^4.17.25",
       },
     },
+    "services/service-b": {
+      "name": "@marcos-corp/service-b",
+      "version": "0.1.0",
+      "dependencies": {
+        "@ts-rest/core": "^3.52.1",
+        "@ts-rest/express": "^3.52.1",
+        "express": "^4.22.2",
+      },
+      "devDependencies": {
+        "@types/express": "^4.17.25",
+      },
+    },
   },
   "overrides": {
     "zod": "4.5.1",
@@ -110,6 +122,8 @@
     "@marcos-corp/db": ["@marcos-corp/db@workspace:packages/db"],
 
     "@marcos-corp/service-a": ["@marcos-corp/service-a@workspace:services/service-a"],
+
+    "@marcos-corp/service-b": ["@marcos-corp/service-b@workspace:services/service-b"],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.3", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || ^2.0.0-alpha.4", "@emnapi/runtime": "^1.7.1 || ^2.0.0-alpha.4" } }, "sha512-UMduMbqO5s5zF2NkNacMT/yK5Y5QiKvWr2+50bzIIxFDwVJ2h49b+oyjaCGPhJxd2/gC2x39EHv/gHVuu36x2Q=="],
 

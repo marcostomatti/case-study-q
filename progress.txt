@@ -212,3 +212,17 @@ then `pkill -f 'bun --watch src/index.ts'`. The backgrounded job reports exit
 package is created rather than pointing at a `server.ts` that lands tasks later.
 When `server.ts` arrives, wire it in through `src/index.ts` instead of
 repointing the script.
+
+## `bun install` printing "no changes" still registers a new workspace package
+
+Adding a leaf whose runtime deps are already in the lockfile (a mirror of an
+existing package) makes `bun install` print `Checked N installs across M
+packages (no changes)`. That line describes the *dependency graph*, not the
+workspace set, and reads as a no-op when it is not one — the same run wrote
+`Saved lockfile`, added the `services/<pkg>` / `@marcos-corp/<pkg>` entries to
+`bun.lock`, and created the leaf's own `node_modules/` symlinks. Do not re-run
+install or start debugging on the strength of "no changes"; read the two things
+that actually answer it:
+
+  grep '<pkg>' bun.lock              -> workspace entry + resolution line
+  ls <pkg>/node_modules              -> the isolated linker's per-leaf symlinks
