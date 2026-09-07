@@ -2,11 +2,10 @@
  * Public surface of `@marcos-corp/contract-tooling`.
  *
  * `lintSpec` is gate 2 and `diffSpecs` is gate 3 of the four blocking gates
- * in spec section 8. The published-baseline resolver that supplies
- * `diffSpecs` with its base document, the OpenAPI emitter, the
- * `@marcos-corp/db` dependency check, the exact-pin check and the gate runner
- * that composes them land in later tasks and are re-exported here alongside
- * them.
+ * in spec section 8, and `latestPublishedSpec` is what supplies `diffSpecs`
+ * with its base document. The OpenAPI emitter, the `@marcos-corp/db`
+ * dependency check, the exact-pin check and the gate runner that composes
+ * them land in later tasks and are re-exported here alongside them.
  *
  * `runBinary` is deliberately not exported: it is how this package starts a
  * gate binary, not something a caller should reach for. Anything needing
@@ -28,3 +27,4 @@ export type {
   LintSeverity,
 } from './lint';
 export { HOUSE_RULESET_PATH, lintSpec, SPEC_PARSE_FAILED } from './lint';
+export { latestPublishedSpec } from './publishedBaseline';

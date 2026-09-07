@@ -614,9 +614,9 @@ A related silent pass with no defence at this layer: a ruleset whose rules are
 nonsense (unknown function, `given` that matches nothing) exits 0 with `[]`.
 Only per-rule fixtures catch that.
 
-## Two leaf-gate rules that cost a red run each time they are rediscovered
+## Three leaf-gate rules that cost a red run each time they are rediscovered
 
-Both bit while writing the first leaf suite; both apply to every remaining
+Each bit while writing a leaf module; all three apply to every remaining
 `src/*.ts` in this repo.
 
 - `@stylistic/multiline-ternary: 'always'` means EVERY ternary spans three
@@ -624,6 +624,10 @@ Both bit while writing the first leaf suite; both apply to every remaining
   the failure reads as a formatting opinion rather than a rule.
 - `NodeJS.ErrnoException` fails `no-undef`: `eslint.base.mjs` registers node
   globals but no `NodeJS` namespace type. Spell it `Error & { code?: string }`.
+- `@stylistic/quotes: 'single'` rejects a template literal carrying no `${}`.
+  A wrapped error message concatenated with `+` therefore mixes quote styles on
+  purpose: the segment holding the interpolation stays a backtick literal,
+  every other segment must be single-quoted.
 
 ## A leaf's `*.test.ts` is linted but never type-checked
 
@@ -802,3 +806,31 @@ line closes it, asserted for every fixture in both directories:
 
 Verified by mutation: copying `base.yaml` over a not-breaking fixture reddens
 exactly that case and nothing else.
+
+## `latestPublishedSpec` supplies gate 3's base document; `null` is an answer
+
+`packages/contract-tooling/src/publishedBaseline.ts` exports
+`latestPublishedSpec(contractPackageDir)`, returning the ABSOLUTE path of the
+highest document under `<pkg>/openapi/published/`, or `null`. `gates.ts`,
+`scripts/pipeline-simulation.ts`, acceptance script 01 and the CI publish step
+should call it rather than globbing that directory themselves.
+
+Two conventions it fixes, which the emit tasks and the publish step have to
+match:
+
+- Baselines are named `<major>.<minor>.<patch>.json` — release versions only.
+  A prerelease, a `v` prefix or a two-segment name **throws** rather than
+  being skipped, because skipping silently resolves to the second-highest
+  version and the diff gate then reports "no breaking changes" against a
+  baseline nobody published. Non-`.json` files (a README) are ignored.
+- `null` means the package has published nothing yet. An absent
+  `openapi/published/` and an empty one give the same answer, and gate 3 has
+  to read it as "nothing to compare against" rather than as a failure. A
+  `contractPackageDir` that is not a directory throws instead, so a typo'd
+  path can never read as "not published yet".
+
+Any case asserting a `null` or a refusal needs a positive control in the same
+test — writing one version into that same directory afterwards and asserting
+it is now found is what separates "the directory is empty" from "the resolver
+looked somewhere else entirely". Same reason the diff fixtures carry the
+"revision actually differs" guard.
