@@ -139,7 +139,7 @@ that the first contract PR is already governed.
 
 - [x] Create `.github/CODEOWNERS` assigning `packages/contracts-service-a/` and `services/service-a/` to a team-a owner, `packages/contracts-service-b/` and `services/service-b/` to a team-b owner, `apps/web-a/` to team-a, `apps/web-b/` to team-b, and `packages/db/` plus `packages/contract-tooling/` to both, using GitHub handle placeholders documented in a header comment
 - [x] Add `docs/ownership.md` explaining which team owns which path, why a consumer opens PRs against a contract package it does not own, and how the CODEOWNERS review requirement enforces spec §3
-- [ ] Add `docs/governance.md` mapping each tier in spec §4 onto the CI gate that implements it and what that gate blocks, recording tiers 3 and 4 as out of scope with the triggers from spec §7 that would make them worth adopting, and recording the spec §10 decisions as resolved — TypeBox with ts-rest for contract packages, Zod for everything internal, contract packages versioned independently
+- [x] Add `docs/governance.md` mapping each tier in spec §4 onto the CI gate that implements it and what that gate blocks, recording tiers 3 and 4 as out of scope with the triggers from spec §7 that would make them worth adopting, and recording the spec §10 decisions as resolved — TypeBox with ts-rest for contract packages, Zod for everything internal, contract packages versioned independently
 
 ---
 

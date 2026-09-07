@@ -427,3 +427,79 @@ header, and a hand-aligned table is easy to get wrong mid-edit. Cheaper than
 reading it: strip the leading/trailing pipe, split on `|`, and assert one
 distinct count per contiguous table block. Run it together with the h1-count and
 duplicate-heading checks — all three are pure text and need no tooling.
+
+## vacuum is Spectral-*ruleset* compatible, not Spectral-*function* compatible
+
+Measured on vacuum 0.30.3 while authoring
+`packages/contract-tooling/rulesets/house.spectral.yaml`. Each item below turns
+a rule into a silent pass: it loads, it counts toward "containing N rules", and
+it reports nothing, ever.
+
+- The `schema` function only validates a **`field`**, never the `given` node.
+  Spectral's node-level `then: {function: schema}` with no `field` checks
+  nothing. This is the easiest way to ship a dead rule.
+- With a `field`, `schema` still passes when that field is **absent** unless
+  `forceValidation: true` is set.
+- `functionOptions` rejects Spectral's `allErrors`, and surfaces the rejection
+  as a *violation on the spec* ("property 'allErrors' is not a valid property
+  for 'schema'") rather than as a ruleset load error.
+- `message:` is **not** interpolated -- `{{path}}` / `{{property}}` / `{{error}}`
+  print literally. Reported text is `"<description>: <function message>"`, so
+  write `description` to read as the first half of that sentence and omit
+  `message`.
+- `@property` is unsupported in filters, so "every 4xx/5xx response" must be an
+  explicit union: `responses[400,401,403,404,409,422,500]`.
+
+What does work and is worth reaching for: filters support `!`, `&&`, `||`, `==`
+and nested member access (`$..[?(@.items && !@.items.type)].items`); `then`
+accepts an **array** of entries against one `given`; the schema function
+supports `patternProperties`, `contains`, `const` and `not`. Prefer the
+given-as-predicate idiom -- select only the offending nodes, then assert
+something that cannot hold -- over a node-level schema check: it yields real
+document paths and messages like "`type` must be defined".
+
+## vacuum resolves $ref before running a rule, which changes what a rule can see
+
+Default execution is against the **resolved** document, so a `$ref` string is
+already gone; a rule reasoning about one needs `resolved: false` on that rule.
+Two consequences past that:
+
+- One violation can be reported **twice** -- once at its real path, once at the
+  resolved copy, where vacuum cannot render a path and prints the raw filter
+  (`[?(@.type == 'object')]`) instead. Assert the rule **code**, never a finding
+  count of exactly 1.
+- `range.start.line` is correct even when the path is that raw filter, so it is
+  the field to point a human at.
+
+## Reading vacuum from code: `lint` has no JSON, `spectral-report` always exits 0
+
+`vacuum lint` exits 0 clean / 1 at error severity but has no JSON flag. The
+machine-readable path is `vacuum spectral-report -r <ruleset> -o <spec>`, which
+writes a bare JSON array to stdout with no banner and **exits 0 whether or not
+there are findings**. Anything shelling out to it must derive pass/fail from the
+parsed array, not from the exit code. Finding fields: `code` (rule id), `path`
+(array), `message`, `severity`, `range.start.line`. Both YAML and JSON specs
+work, so the committed `openapi/*.json` artifacts lint directly.
+
+vacuum is a documented prerequisite and is **not** installed on this machine.
+For local verification without touching the repo:
+`npm install --prefix /tmp/vacuum-probe @quobix/vacuum@0.30.3`, then prepend
+`/tmp/vacuum-probe/node_modules/.bin` to PATH. Pin the version CI installs.
+
+## Prove a lint rule is live: one violating document per rule, and per leg
+
+A ruleset that loads and reports nothing looks exactly like a correct one. What
+separates them, and the shape `fixtures/` needs: one document per rule violating
+exactly that rule, one satisfying every rule, then assert the **set of rule
+codes** each produces. Two legs that are easy to skip and were both needed here:
+
+- Every entry of a multi-path `given` needs its own hit. A document planting the
+  same violation at each covered position proves all of them at once; one that
+  only exercises `components.schemas[*]` leaves the other paths unproven.
+- Every entry of a `then` array needs its own violating case. The sunset rule's
+  `pattern` leg (a malformed `x-sunset`) never runs against a fixture that only
+  omits the field.
+
+Also worth a tolerance case per rule, not just a violation: the typeless-schema
+rule must **not** fire on an `anyOf`/`enum` schema that legitimately carries no
+`type`, and the null rule must not fire on `nullable: false`.

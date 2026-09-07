@@ -1,0 +1,174 @@
+# House ruleset for every contract package in this monorepo.
+#
+# Spectral ruleset format, consumed by `vacuum lint --ruleset`. It carries the
+# house rules only: it deliberately does not `extends` vacuum's recommended
+# OpenAPI set, so anything reported here is a house rule and the gate output
+# stays readable. Style rules that do not change what a consumer can rely on
+# are out of scope on purpose.
+#
+# Rules 1-5 are the five bullets under "House lint rules" in spec section 8.
+# Rule 6 is the linter half of the section 2.5 convention "one convention for
+# null vs absent" -- here, null is never emitted and absent means not
+# applicable.
+#
+# vacuum behaviour these rules are written against (measured on vacuum 0.30.3,
+# not assumed -- each one silently produces a rule that never fires if ignored):
+#
+#   - `$ref` is resolved away before a rule runs unless the rule sets
+#     `resolved: false`. Any rule reasoning about a $ref string must set it.
+#   - the `schema` function only validates a `field`, never the `given` node
+#     itself. `then: {function: schema}` with no `field` matches nothing and
+#     reports nothing.
+#   - with a `field`, the `schema` function still passes silently when that
+#     field is absent unless `forceValidation: true` is set.
+#   - `message:` is not template-interpolated. Reported text is
+#     "<description>: <function message>", so each description below is
+#     phrased to read as the first half of that sentence.
+#   - `@property` is not supported in filters, so error responses are selected
+#     by an explicit status-code union rather than by a `^[45]` key match.
+#
+# A `given` that matches nothing is not an error, it is silent coverage loss.
+# Every rule below is paired with a fixture under `../fixtures/` that must fail
+# on that rule and on no other.
+
+rules:
+  # 1. Spec section 8: "No typeless or empty ({}) schemas".
+  #
+  # Expressed as given-as-predicate: the path selects only schema nodes that
+  # carry neither a type nor a composition keyword, so the `defined` check
+  # cannot pass and the reported message names the missing key. A schema built
+  # out of allOf/anyOf/oneOf/enum/const is publishable without a type and is
+  # excluded by the same predicate rather than by a second rule.
+  house-no-typeless-schema:
+    description: >-
+      A schema with no type and no composition keyword publishes nothing, so a
+      consumer cannot derive a type from it and oasdiff cannot detect a change
+      to it
+    severity: error
+    given:
+      - $.components.schemas[?(!@.type && !@.allOf && !@.anyOf && !@.oneOf && !@.enum && !@.const)]
+      - $..properties[?(!@.type && !@.allOf && !@.anyOf && !@.oneOf && !@.enum && !@.const)]
+      - $..allOf[?(!@.type && !@.allOf && !@.anyOf && !@.oneOf && !@.enum && !@.const)]
+      - $..anyOf[?(!@.type && !@.allOf && !@.anyOf && !@.oneOf && !@.enum && !@.const)]
+      - $..oneOf[?(!@.type && !@.allOf && !@.anyOf && !@.oneOf && !@.enum && !@.const)]
+      - $..[?(@.items && !@.items.type && !@.items.allOf && !@.items.anyOf && !@.items.oneOf && !@.items.enum && !@.items.const)].items
+      - $..[?(@.schema && !@.schema.type && !@.schema.allOf && !@.schema.anyOf && !@.schema.oneOf && !@.schema.enum && !@.schema.const)].schema
+    then:
+      field: type
+      function: defined
+
+  # 2. Spec section 8: "additionalProperties set explicitly on every object".
+  house-object-additional-properties-explicit:
+    description: >-
+      An object schema that leaves additionalProperties unset is silently
+      permissive, so the request-strictness half of spec section 2.5 is
+      unenforceable and a misspelled field is accepted instead of rejected
+    severity: error
+    given: $..[?(@.type == 'object')]
+    then:
+      field: additionalProperties
+      function: defined
+
+  # 3. Spec section 8: "Every enum has an unknown member".
+  house-enum-has-unknown-member:
+    description: >-
+      An enum with no unknown member makes adding a value a silent break,
+      because a consumer that has not redeployed has no case to fall back to
+    severity: error
+    given: $..[?(@.enum)]
+    then:
+      field: enum
+      function: schema
+      functionOptions:
+        # Not load-bearing today -- the given already guarantees `enum` exists,
+        # and the rule fires without it. Kept because widening the given to a
+        # path where `enum` can be absent would otherwise turn this rule into a
+        # silent pass rather than a failure.
+        forceValidation: true
+        schema:
+          type: array
+          contains:
+            const: unknown
+
+  # 4. Spec section 8: "Deprecated operations carry a sunset date". Applied to
+  # anything marked deprecated rather than to operations only, because a
+  # deprecated field is the case spec section 6.4 actually has to retire.
+  house-deprecated-requires-sunset:
+    description: >-
+      Something marked deprecated with no x-sunset date can never be retired,
+      because no consumer is told when it goes away and no owner is given a
+      date to migrate by
+    severity: error
+    given: $..[?(@.deprecated == true)]
+    then:
+      - field: x-sunset
+        function: defined
+      - field: x-sunset
+        function: pattern
+        functionOptions:
+          match: '^\d{4}-\d{2}-\d{2}$'
+
+  # 5. Spec section 8: "operationId present; error responses conform to the
+  # shared error schema". One rule, because both halves are properties of the
+  # same operation node. `resolved: false` keeps the $ref string readable --
+  # under the default resolved document the shared error schema is inlined and
+  # is indistinguishable from a hand-copied lookalike that will drift.
+  house-operation-id-and-shared-error-schema:
+    description: >-
+      An operation with no operationId cannot be keyed in api_usage, so spec
+      section 6.4 cannot answer who is calling it; and an error response that
+      does not reference #/components/schemas/Error hands every consumer a
+      different error shape to parse
+    severity: error
+    resolved: false
+    given: $.paths[*][get,put,post,delete,options,head,patch,trace]
+    then:
+      - field: operationId
+        function: defined
+      - field: responses
+        function: schema
+        functionOptions:
+          schema:
+            type: object
+            patternProperties:
+              '^[45]':
+                type: object
+                properties:
+                  content:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      required: ['schema']
+                      properties:
+                        schema:
+                          type: object
+                          required: ['$ref']
+                          properties:
+                            $ref:
+                              const: '#/components/schemas/Error'
+
+  # 6. Spec section 2.5: "One convention for null vs absent, encoded in the
+  # linter". Both spellings are rejected: OpenAPI 3.0's `nullable: true` and
+  # 3.1's type array containing "null". The given matches on either key so a
+  # `nullable` sitting on a composition schema with no type is still caught.
+  house-no-null:
+    description: >-
+      A nullable field gives a consumer two empty cases, null and absent, that
+      mean the same thing; absent alone is the repo-wide convention for "not
+      applicable"
+    severity: error
+    given: $..[?(@.nullable || @.type)]
+    then:
+      - field: nullable
+        function: falsy
+      - field: type
+        function: schema
+        # Deliberately no `forceValidation` here, unlike the enum rule above: a
+        # schema with no `type` at all is rule 1's business, and forcing it
+        # would report the same node twice under two rule names.
+        functionOptions:
+          schema:
+            not:
+              type: array
+              contains:
+                const: 'null'
