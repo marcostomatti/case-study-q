@@ -116,7 +116,7 @@ shared config leaves exist. Each package gets a leaf `eslint.config.mjs`
 extending `../../eslint.base.mjs` and a leaf `tsconfig.json` extending
 `../../tsconfig.base.json`, matching the pattern the root already uses.
 
-- [ ] Create `packages/db` as a bun workspace package named `@marcos-corp/db` with `package.json`, a leaf `tsconfig.json` extending `../../tsconfig.base.json`, a leaf `eslint.config.mjs` extending `../../eslint.base.mjs`, and `lint`/`check-types`/`test` scripts, exporting an empty `src/index.ts` placeholder
+- [x] Create `packages/db` as a bun workspace package named `@marcos-corp/db` with `package.json`, a leaf `tsconfig.json` extending `../../tsconfig.base.json`, a leaf `eslint.config.mjs` extending `../../eslint.base.mjs`, and `lint`/`check-types`/`test` scripts, exporting an empty `src/index.ts` placeholder
 - [ ] Create `packages/contract-tooling` as a bun workspace package named `@marcos-corp/contract-tooling` with the same four config files and script names as `@marcos-corp/db`
 - [ ] Create `packages/contracts-service-a` as a bun workspace package named `@marcos-corp/contracts-service-a` at version `0.1.0`, with the same four config files and script names, and add `@sinclair/typebox` and `@ts-rest/core` as dependencies
 - [ ] Create `packages/contracts-service-b` as a bun workspace package named `@marcos-corp/contracts-service-b` at version `0.1.0`, mirroring the `contracts-service-a` package configuration

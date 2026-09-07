@@ -82,3 +82,29 @@ reddens before deleting it. Worth repeating for each new package.
 
 `gate:control-bytes` scans **tracked** files only, so a new package is outside
 its scope until it is committed — run it once more after the commit.
+
+## Cloning the packages/db layout: two bits are db-specific, drop them
+
+`packages/db` is the template for every remaining leaf, but two of its lines
+describe drizzle artifacts and mean nothing anywhere else:
+
+  tsconfig.json   exclude ["...", "drizzle", ...]   <- drop outside packages/db
+  eslint.config.mjs  { ignores: ['drizzle/**', ...] } <- drop outside packages/db
+
+Keep `.tmp/**` in both; it is generic. Copying `drizzle` into a package that
+will never hold a migration reads as cargo-cult to the reviewer. Everything
+else in the five-file layout transfers verbatim.
+
+## What each leaf gate actually reads (measured, not assumed)
+
+In a leaf package, `eslint .` and `tsc --noEmit` cover DIFFERENT file sets:
+
+  eslint .        5 files: eslint.config.mjs, vitest.config.ts, src/index.ts,
+                  AND package.json + tsconfig.json (the jsonc plugin in
+                  eslint.base.mjs makes both JSON configs real lint targets)
+  tsc --noEmit    2 files: src/index.ts, vitest.config.ts
+                  eslint.config.mjs is NOT type-checked (.mjs, allowJs off)
+
+Two consequences: a badly formatted package.json fails `lint`, not
+`check-types`; and a type error inside a leaf `eslint.config.mjs` is invisible
+to every gate in the verification order.

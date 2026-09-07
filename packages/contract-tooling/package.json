@@ -1,0 +1,22 @@
+{
+  "name": "@marcos-corp/contract-tooling",
+  "version": "0.1.0",
+  "description": "Shared contract-governance machinery: the house ruleset, OpenAPI emit, breaking-change diff, published-baseline resolution and the dependency/pin gates. Built once here so neither service reinvents it.",
+  "private": true,
+  "type": "module",
+  "author": "Marcos Tomatti <marcostomatti.cv@gmail.com>",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -22,6 +22,10 @@
         "vitest": "^4.1.7",
       },
     },
+    "packages/contract-tooling": {
+      "name": "@marcos-corp/contract-tooling",
+      "version": "0.1.0",
+    },
     "packages/db": {
       "name": "@marcos-corp/db",
       "version": "0.1.0",
@@ -68,6 +72,8 @@
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
 
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.6.0", "", {}, "sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw=="],
+
+    "@marcos-corp/contract-tooling": ["@marcos-corp/contract-tooling@workspace:packages/contract-tooling"],
 
     "@marcos-corp/db": ["@marcos-corp/db@workspace:packages/db"],
 
