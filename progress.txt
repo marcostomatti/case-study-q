@@ -1312,3 +1312,90 @@ only fires on invalid input — `lint.test.ts` owns that claim and the docblock
 says so. Run the "disable this gate" mutation for every gate a composed suite
 touches; the ones that redden nothing are the boundary, and writing it down
 stops the next reader from over-reading the suite.
+
+## `*.test-d.ts` under `src/` IS type-checked; `*.test.ts` is not. Use that
+
+Closes the "a leaf's `*.test.ts` is linted but never type-checked" note above
+with a fix that needs no config. Every leaf tsconfig excludes `**/*.test.ts`
+and that glob does **not** match `*.test-d.ts`, so a type-level suite named
+`<module>.test-d.ts` beside its module is read by `bun run check-types` today.
+Measured in `packages/db`, with a negative control:
+
+  bunx tsc --noEmit --listFiles   names *.test-d.ts, omits *.test.ts
+  a wrong expectation             exit 2, `TS2344 ... Expected: <x>, Actual:`
+
+`expectTypeOf` imported from `vitest` works there even though vitest never
+executes the file — it is a pure type-level helper, and the mismatch surfaces
+as an ordinary tsc error. So the split for any leaf is: `*.test.ts` is gated by
+`bun run test`, `*.test-d.ts` by `bun run check-types`. Say which in the file's
+docblock, or the next reader assumes the runner covers both.
+
+**Do not reach for vitest's `typecheck` mode instead.** With
+`typecheck.enabled: true` it reads the leaf tsconfig, inherits the
+`**/*.test.ts` exclude, type-checks **zero** files and prints
+`Type Errors  no errors` — measured: a blatant `const x: string = 1;` in the
+included file stayed green, and so did an inverted `toEqualTypeOf`. It only
+reddens once pointed at a tsconfig that includes the test files, at which point
+it has bought nothing over the `.test-d.ts` route and added an experimental
+flag plus a second tsconfig.
+
+## Runtime and type assertions over the same module are not redundant
+
+General to any schema, config or builder module whose source states two
+separate things. Proven by mutation in `packages/db`, predicting the red set by
+case name before each run; six legs, all matching:
+
+  rename a SQL column                 check-types GREEN, test RED (2 cases)
+  drop a FK's `onDelete`              check-types GREEN, test RED (1 case)
+  add a SQL DEFAULT                   check-types RED (1), test RED (3)
+  add a member to a DB enum           check-types RED (3), test RED (2)
+  relax a column to NOT NULL          check-types RED (2), test RED (2)
+  naive helper: SQL name == property  check-types GREEN, test RED (3)
+
+The first two are the boundary worth writing down: an inferred type erases
+every SQL name, so `check-types` cannot see a rename at all. The type suite
+owns the TypeScript property names and their types; the runtime suite owns the
+SQL names, types, nullability, defaults and keys. Neither can make the other's
+claim, and a suite that only does one of them reads as covering both.
+
+## Reading a Drizzle table back as data, and where the helper lives
+
+`packages/db/src/testing/tableFacts.ts` exports `columnFacts`, `sqlTableName`
+and `foreignKeyFacts`. Every remaining schema task in `packages/db` should
+import it rather than re-deriving the introspection, and any suite asserting
+what a migration will emit should go through it.
+
+- `getTableColumns` / `getTableName` come from `drizzle-orm`;
+  `getTableConfig` (foreign keys, indexes, unique constraints) is
+  `drizzle-orm/pg-core` and takes a `PgTable`.
+- **`column.getSQLType()` is the assertion worth making** — it renders exactly
+  what `CREATE TABLE` writes, length, enum type name and `with time zone`
+  included (`varchar(11)`, `char(3)`, `timestamp with time zone`). Stronger and
+  far more readable than `columnType` (`PgVarchar`), which says nothing about
+  length.
+- A column's `.unique()` shows up as `column.isUnique`, **not** in
+  `getTableConfig(table).uniqueConstraints` — that list stays empty. Reading
+  only the constraint list reports every column as non-unique.
+- `foreignKey.reference()` is a thunk (tables may point at ones declared later
+  in the module graph); calling it is what resolves the referenced table.
+- Assert the **whole** `columnFacts` record with one `toEqual`. A per-column
+  check passes just as happily when a column is added or dropped, which is the
+  change most likely to arrive without anyone reopening the suite.
+
+## drizzle-orm 0.45.2: every peer is optional and `pg-core` means it
+
+Unlike `@ts-rest/core`'s optional-zod peer, which is a lie at runtime (see
+above), drizzle's is real. All 29 peers are `optional: true` and they are all
+drivers; `drizzle-orm/pg-core` builds tables, enums and constraints with no
+driver installed at all — verified by importing it and rendering a table with
+nothing but `drizzle-orm` in the tree. So a package that only declares schema
+needs exactly one dependency, and the driver arrives with the task that opens
+a connection.
+
+## `newline-per-chained-call` breaks every Drizzle column builder
+
+Adds to the three leaf-gate rules above. `ignoreChainWithDepth: 2` means
+`uuid('id').primaryKey().defaultRandom()` and `.notNull().unique()` are lint
+errors. `eslint --fix` handles it and the result is the repo's house style, so
+run `bunx eslint . --fix` before reading the failures as a design problem —
+but expect every schema module to come out with its chains split across lines.
