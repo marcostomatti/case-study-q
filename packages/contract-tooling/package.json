@@ -17,9 +17,15 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "typescript": "^5.9.3"
+    "@ts-rest/core": "^3.52.1",
+    "openapi3-ts": "^4.6.1",
+    "typescript": "^5.9.3",
+    "zod": "^4.5.1"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "@sinclair/typebox": "^0.34.52"
   }
 }

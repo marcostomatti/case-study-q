@@ -122,13 +122,37 @@ Verified with @sinclair/typebox and @ts-rest/core.
   read `packages/<pkg>/node_modules/`, or `node_modules/.bun/`, which carries
   the resolved version in the directory name.
 
-## @ts-rest/core peers zod OPTIONALLY, so the root zod override is not a conflict
+## @ts-rest/core's optional zod peer is a LIE at runtime: the ESM build imports it
 
 `@ts-rest/core@3.52.1` (the `latest` tag; there is no v4) declares
-`peerDependencies.zod: ^3.22.3`, which looks like a clash with root
-`overrides.zod: 4.5.1`. It is not — `peerDependenciesMeta` marks zod and
-@types/node **optional**, and zod is not installed at all. Check
-`npm view <pkg> peerDependenciesMeta` before working around a peer warning.
+`peerDependencies.zod: ^3.22.3` and marks it **optional** in
+`peerDependenciesMeta`, which reads as "zod is only needed if you author in
+zod". That is true for `tsc` and false for `node`: line 1 of
+`index.esm.mjs` is a bare `import { z } from 'zod'`, evaluated at module load.
+
+So **any package that imports `@ts-rest/core` at runtime must declare `zod`
+itself** — `initContract()`, `isAppRoute`, `ContractNoBody` and
+`ContractPlainTypeRuntimeSymbol` are all unreachable without it. Under the
+isolated linker nothing hoists, so it is per package. The failure is
+`Error: Cannot find package 'zod' imported from .../@ts-rest/core/index.esm.mjs`,
+at import time, so a whole test file reports zero tests rather than one
+failure.
+
+Two consequences worth carrying:
+
+- `packages/contracts-*` will each need `zod` declared even though spec 2.4
+  forbids authoring contract schemas in it. That is not a violation — the rule
+  is about what a contract *publishes*, and `docs/governance.md` already scopes
+  Zod as "banned inside `packages/contracts-*`" in the authoring sense. Say so
+  explicitly wherever a reviewer will see the dependency, or it reads as one.
+- The root `overrides.zod: 4.5.1` wins over ts-rest's `^3.22.3` peer, and
+  ts-rest 3.52.1 loads and runs fine against zod 4.5.1 for the contract-shape
+  surface this repo uses (verified: 251 cases green). `bun install` prints no
+  peer warning either way.
+
+Still true, and still worth doing: check `npm view <pkg> peerDependenciesMeta`
+before working around a peer warning. Just do not conclude from `optional` that
+the package can be *imported* without it — read the built entrypoint.
 
 ## Prove a new dependency resolves, with a negative control
 
@@ -980,3 +1004,199 @@ declared version matches it. That makes the exact pin cheaper than the protocol
 holds fails `bun install` outright, before any gate runs. Spec section 2.2 is
 therefore enforced twice over, and the gate's job is catching the ranged
 specifier that would have installed fine.
+
+## `emitOpenApi` is gate 1, and it emits OpenAPI **3.1.0**
+
+`packages/contract-tooling/src/emit.ts` exports `emitOpenApi(contract, meta)`
+returning an `OpenAPIObject`, plus `OPENAPI_VERSION`, `EmitMeta`,
+`COMPONENT_REF_PREFIX`, `UnrepresentableSchemaError` and
+`UnrepresentableReason`. The half that decides whether one schema is
+publishable is `src/schemaRepresentation.ts`; the split is only the 800-line
+file ceiling, and `emit.ts` re-exports the error type so callers see one gate.
+`gates.ts`, both `contracts-*/scripts/emit.ts` and acceptance scripts 01-03
+should call it rather than building a document themselves.
+
+3.1.0 is fixed by the module and deliberately not a caller's choice: TypeBox
+emits JSON Schema 2020-12, which only 3.1 embeds unmodified. 3.0 would need
+the lossy rewrite (`nullable`, boolean `exclusiveMinimum`, no `const`) that
+spec section 5 picked TypeBox to avoid. Verified downstream rather than
+assumed, because a version the rest of the chain mishandles would surface two
+gates later: vacuum 0.30.3 lints a 3.1 document against the house ruleset, and
+oasdiff 1.31.0 reports `response-required-property-removed` across a 3.1 pair.
+
+Conventions the contract-authoring tasks have to match, because the emitter
+imposes rather than infers them:
+
+- **`operationId` is derived from the router keys**, camel-joined for a nested
+  router (`{ cards: { activate } }` -> `cardsActivate`). Not read from the
+  route. This makes house rule 5's "operationId present" structural instead of
+  a convention, and it is the id `api_usage` keys on under spec 2.3.
+- **A schema carrying `$id` is hoisted** into `components.schemas` under that
+  id and replaced in place by a `$ref`. That is the only way house rule 5 is
+  satisfiable at all: it runs `resolved: false` and wants the literal
+  `{"$ref": "#/components/schemas/Error"}`, so the shared error schema **must**
+  carry `$id: 'Error'` or the emitted document fails gate 2.
+- **Only `x-` prefixed keys of a route's `metadata` reach the operation.**
+  ts-rest has a `deprecated` flag and nowhere to put the sunset date house rule
+  4 demands beside it, so a deprecated operation carries
+  `metadata: { 'x-sunset': 'YYYY-MM-DD' }`. Everything else in `metadata` stays
+  internal.
+- `pathParams` / `query` / `headers` are exploded into parameters, so the
+  container object never appears in the document and its
+  `additionalProperties` is a service-side concern. `c.router()` puts
+  `headers: {}` on every route; that is read as "no parameters", not as an
+  unconstrained schema.
+- A response with no body is `c.noBody()`. A bare `null` is refused.
+
+Same split as the other gates, with one difference: spec section 8 says emit
+*fails*, so both halves throw. `UnrepresentableSchemaError` (carrying `path`
+and `reason`) means the contract is unpublishable; a plain `Error` prefixed
+`emit gate cannot run:` means the contract or the meta is malformed. Assert the
+prefix, not just the path — `gates.ts` discriminates on exactly that.
+
+## Do not reach for `@ts-rest/open-api`; it silently drops every TypeBox schema
+
+Measured on `@ts-rest/open-api@3.52.1`, and it is the exact failure spec 2.4
+forbids. It reads a schema only through `isZodType`, so handed a TypeBox route
+it emits `responses: { '200': { description: '200' } }` — no `content`, no
+schema — and exits 0. The path parameter survives only because ts-rest
+synthesises `{type: 'string'}` for those regardless. It also takes a
+**non-optional** `zod` peer and depends on `@anatine/zod-openapi`.
+
+Anything reaching for an ecosystem tool here should run the same two-minute
+probe first: hand it one TypeBox route and read whether the response schema
+survives. A tool that drops it still produces a document, still lints, and
+still diffs clean against the last published version.
+
+## `c.type<T>()` is compile-time only — at runtime it is a bare symbol
+
+The single most likely contract-authoring mistake, because ts-rest's own docs
+recommend it for non-Zod schemas and it type-checks perfectly.
+`c.type<Dashboard>()` returns `ContractPlainTypeRuntimeSymbol`, i.e.
+`Symbol(ContractPlainType)`, with no schema behind it. Used in a contract, the
+emitted document would state nothing for that payload.
+
+Pass the TypeBox schema object itself. Gate 1 refuses the symbol with reason
+`compile-time-type`, so the mistake is caught, but knowing it up front saves a
+red CI run per contract.
+
+Two neighbouring runtime facts, both needed to read a ts-rest contract:
+`ContractNoBody` and `ContractPlainTypeRuntimeSymbol` are **not** registry
+symbols (`Symbol.keyFor` returns undefined), so they can only be compared by
+identity through an import — unlike TypeBox's `Kind` and `TransformKind`, which
+are `Symbol.for(...)` and therefore match across TypeBox copies. And ts-rest's
+`isAppRoute` is `'method' in obj`, which **throws a TypeError** on a string or
+number rather than returning false: check the shape yourself first.
+
+## TypeBox spells its JavaScript-only types as JSON-Schema-invalid `type` values
+
+Measured on `@sinclair/typebox@0.34.52`, and the reason gate 1 can decide
+representability structurally rather than from a deny-list of constructors:
+
+  Type.Date()       {"type":"Date"}          Type.Undefined()  {"type":"undefined"}
+  Type.Void()       {"type":"void"}          Type.BigInt()     {"type":"bigint"}
+  Type.Symbol()     {"type":"symbol"}        Type.Uint8Array() {"type":"Uint8Array"}
+  Type.Function()   {"type":"Function"}      Type.Constructor(){"type":"Constructor"}
+  Type.Promise()    {"type":"Promise"}
+  Type.Any()        {}                       Type.Unknown()    {}
+  Type.Never()      {"not":{}}
+
+So "type is not one of JSON Schema's seven" catches nine of them and stays
+correct when TypeBox adds a tenth. `Any`/`Unknown` need the separate "no
+constraining keyword" check — they are the `unrepresentable: "any"` failure
+verbatim. `Type.Transform` needs a third check and is the one the other two
+cannot see: it emits an ordinary `{"type":"string"}` and is marked only by the
+`Symbol.for('TypeBox.Transform')` own symbol.
+
+`Type.Never()` is the awkward one: `{"not":{}}` is valid JSON Schema, but the
+`{}` inside it is not publishable, so gate 1 refuses it at path `....not` with
+reason `unconstrained`. Worth knowing before reading that message.
+
+## A schema walk must be keyword-driven, never a generic deep walk
+
+Applies to anything traversing JSON Schema in this repo. `const`, `default` and
+`examples` hold **values**, not schemas, and a value is free to look exactly
+like one — `{"const": {"type": "Date"}}` is an example object, not a Date
+schema. A generic "recurse into every object" walk reports it as an
+unrepresentable schema, at a path that names a field the author never wrote a
+schema for.
+
+Recurse only through the keywords whose value is a schema: single
+(`items`, `not`, `if`/`then`/`else`, `contains`, `propertyNames`,
+`additionalProperties`, `unevaluated*`, `additionalItems`), array (`allOf`,
+`anyOf`, `oneOf`, `prefixItems`) and map (`properties`, `patternProperties`,
+`$defs`, `definitions`, `dependentSchemas`). The mutation that proves the
+distinction is worth keeping: swap in the generic walk and confirm the
+const/default/examples case reddens and nothing else does.
+
+## `--reporter=basic` does not exist in vitest 4, and the failure reads as a test failure
+
+Cost a wrong mutation-control reading. `bunx vitest run x.test.ts
+--reporter=basic` exits **1** with a *Startup Error* (`Failed to load custom
+Reporter from basic`) and runs no tests at all. In a control that reads only
+the exit code, that is indistinguishable from "the mutation reddened the
+suite" — the mutation is then recorded as proven when nothing ran.
+
+Two habits that close it, both cheap:
+
+- Always read the `Tests  N failed | M passed (T)` line, never the exit code
+  alone, and check `T` matches the expected case count.
+- In a shell function driving mutations, remember a failed `python3` heredoc
+  does **not** stop the function: the next line runs the suite against
+  *unmutated* code and reports a clean pass that reads as "this check is not
+  load-bearing". Make the mutation script `assert out != src` and read that the
+  assert did not fire before believing the run.
+
+## Proving a gate's checks are load-bearing: mutate each check, predict by name
+
+The grid shape that worked for gate 1 and transfers to any multi-check gate.
+Build the case table as a **cross product of position and construct** — every
+slot a value can occupy times every construct the gate refuses — then:
+
+- give every slot a **positive control** using the same builder and a valid
+  value, or a case passes just as well when the builder is broken for an
+  unrelated reason;
+- disable one check at a time and confirm the red set is exactly the cases that
+  check is responsible for, **by name**. Eight slots x one construct reddening
+  together is the signal that the check covers every position; a construct that
+  reddens in a response but not in a header is a hole.
+
+Run here for seven checks; each reddened exactly its predicted 8 cases (or 1,
+for the walk and the type-array legs). The cross product also found the gap it
+was meant to find: with no `type: [...]` case in the table, a check written
+only for the string form of `type` passed everything.
+
+## A test that asserts an emitted artifact is *usable* has to run the next gate
+
+Structural assertions on an emitted document — right keys, right shapes — all
+pass against a document the next gate rejects. The one that does not is running
+the real house ruleset over the emitted document through `lintSpec`, which is
+why `src/emit.test.ts` shells out to vacuum for a single case.
+
+Proven non-vacuous by mutation, and this is the pairing worth copying: making
+the emitter inline `$id` schemas instead of hoisting them reddens both the
+`$ref` assertion **and** the house-rule case, because house rule 5 reads the
+unresolved document and wants a literal `$ref`. Making it drop
+`additionalProperties` reddens the house-rule case too. Without that case an
+emitter that fails gate 2 passes its own suite.
+
+Note this adds a second vacuum consumer to `test:all` beyond `lint.test.ts`.
+One case depends on the binary rather than a whole `beforeAll`, so an
+unprovisioned machine gets exactly one failure carrying `lint gate cannot run:
+could not execute 'vacuum'` plus the `$VACUUM_BIN` escape hatch, and the other
+127 cases still run.
+
+## `openapi3-ts/oas31` supplies the document types, and its SchemaObject is narrow
+
+`openapi3-ts@4.6.1` is a runtime `dependencies` entry of
+`@marcos-corp/contract-tooling` because `OpenAPIObject` appears in
+`emitOpenApi`'s exported signature; only its types are used, so its own `yaml`
+dependency never loads. Import from the `oas31` subpath, not the root.
+
+One thing to expect: `SchemaObject` enumerates OpenAPI 3.0's keyword set plus a
+few, and its index signature only admits `` `x-${string}` ``. JSON Schema
+2020-12 keywords it does not list — `$defs`, `if`/`then`/`else`,
+`patternProperties`, `unevaluated*`, `dependentRequired` — are legal in a 3.1
+document and are a type error to write into a `SchemaObject` literal. Build the
+node as `Record<string, unknown>` and cast once, at the one boundary where the
+document is right and the interface is narrow.
