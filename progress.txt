@@ -332,3 +332,61 @@ Relevant to `docs/ownership.md`, the CI `paths:` filters and acceptance script
   every rule here is documentation until the handles are swapped (tracked in
   `.plans/PREREQUISITES-*.md`) and branch protection on `main` requires
   code-owner review.
+
+## Tracked markdown IS a lint target -- `docs/**` is not ignored anywhere
+
+Refines the "no lint gate reads YAML or extensionless files" note above: the
+opposite is true for `.md`. `eslint.base.mjs` declares a `files: ['**/*.md']`
+block extending `markdown/recommended`, and the root `eslint.config.mjs`
+ignores block lists only the three workspace globs plus `.claude/`, `.plans/`,
+`.specs/`, `.tmp/`, `.docs/` -- **not** `docs/`. So every file added under
+`docs/` is read by root `bun run lint`, and by `gate:control-bytes` once
+committed.
+
+Measured, with negative controls, when `docs/ownership.md` landed:
+  bunx eslint . -f json | ...      -> 28 files, docs/ownership.md among them
+  `#BadHeading` planted            -> exit 1, markdown/no-missing-atx-heading-space
+  literal U+200B planted           -> exit 1, house/no-unsafe-unicode
+  restored                         -> exit 0
+  gate:control-bytes               -> 93 files pre-commit, 94 after
+
+Rules that actually bite prose: `no-missing-atx-heading-space`,
+`no-duplicate-headings`, `no-multiple-h1`, `table-column-count` (every row of a
+table needs the same cell count). `markdown/no-missing-label-refs` is turned
+off in `eslint.base.mjs`, so bare `[bracketed]` text is safe.
+
+Related skills for the remaining `docs/*` tasks:
+`markdown-link-check-strip-code-regions` (strip fences/spans before scanning
+for links) and `wrapped-prose-edit-safety` (span edits never reflow the rest of
+a hand-wrapped paragraph).
+
+## Width checks with awk count BYTES, so `--` and section signs read as over-long
+
+Prose convention in this repo's authored docs (AGENTS.md, CLAUDE.md, `.specs/`,
+`.plans/`) is hand-wrapped at 80 columns; tables and long link targets are
+allowed past it. README.md and PRESENTATION.md are unwrapped and are not the
+model to copy.
+
+`awk '{ if (length($0) > 80) ... }'` on macOS counts bytes, not characters. An
+em dash costs 3 bytes and a section sign 2, so a correctly wrapped 80-character
+line reports as 85 and reads as a violation that is not there. Subtract the
+multibyte characters before believing the number, or measure with
+`python3 -c "print(max(len(l) for l in open(p)))"`.
+
+Neither character is banned -- `house/no-unsafe-unicode` flags only C0/DEL,
+BiDi overrides, zero-width and default-ignorable code points, and U+2028/9. The
+existing docs use both.
+
+## Relative links out of `docs/` resolve, and are worth checking with a control
+
+A link from `docs/x.md` to a repo-root path needs the `../` prefix
+(`../.github/CODEOWNERS`), and nothing in the four-gate verification order
+opens it -- a dead link is green. Cheap check, run from the repo root:
+
+  grep -oE '\]\(([^)]+)\)' docs/x.md | sed 's/](//; s/)$//' | while read -r l; do
+    python3 -c "import os,sys; p=os.path.normpath('docs/'+sys.argv[1]); \
+      print(('OK      ' if os.path.exists(p) else 'MISSING ')+p)" "$l"
+  done
+
+Pair it with a deliberately misspelled target in the same run, or a checker
+that reports OK for everything is indistinguishable from one that works.
