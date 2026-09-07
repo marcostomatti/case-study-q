@@ -34,6 +34,14 @@
         "@ts-rest/core": "^3.52.1",
       },
     },
+    "packages/contracts-service-b": {
+      "name": "@marcos-corp/contracts-service-b",
+      "version": "0.1.0",
+      "dependencies": {
+        "@sinclair/typebox": "^0.34.52",
+        "@ts-rest/core": "^3.52.1",
+      },
+    },
     "packages/db": {
       "name": "@marcos-corp/db",
       "version": "0.1.0",
@@ -84,6 +92,8 @@
     "@marcos-corp/contract-tooling": ["@marcos-corp/contract-tooling@workspace:packages/contract-tooling"],
 
     "@marcos-corp/contracts-service-a": ["@marcos-corp/contracts-service-a@workspace:packages/contracts-service-a"],
+
+    "@marcos-corp/contracts-service-b": ["@marcos-corp/contracts-service-b@workspace:packages/contracts-service-b"],
 
     "@marcos-corp/db": ["@marcos-corp/db@workspace:packages/db"],
 

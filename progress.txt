@@ -151,3 +151,14 @@ a green run is indistinguishable from a gate that read nothing.
   exactly with no range specifier (spec 2.2) and a gate enforces that, so
   bumping it is the reviewable event. The packages still stay `private: true`;
   "published" here means the committed OpenAPI document, never an npm registry.
+
+## For a "mirror package X" task, diff the configs instead of re-reading them
+
+Several plan tasks say "mirroring the <other> package configuration"
+(contracts-service-b, service-b, web-a/web-b). After writing the new leaf, run
+`diff <template>/<file> <new>/<file>` for each of package.json, tsconfig.json,
+eslint.config.mjs and vitest.config.ts. A faithful mirror produces only the
+name / display / description lines; anything else in the diff is an unintended
+delta. This is stronger than re-reading each file, and it catches the reverse
+failure too — a template-specific line copied where it does not belong (see the
+drizzle-exclude note above).
