@@ -2049,3 +2049,81 @@ shows which one reddened. Skill: `convert-exactly-one-spelling`.
   expression in the type query instead —
   `Static<ReturnType<typeof paginatedResponse<typeof Schema>>>` — which needs
   no binding at all.
+
+## Reuse a shared TypeBox primitive with a field-specific description by SPREAD
+
+Every remaining schema in both contract packages reuses `Timestamp`,
+`MonetaryAmount` and `CurrencyCode`, and each usually wants to say what the
+field means rather than what the type is. The two obvious routes are both
+wrong:
+
+- `Type.Ref(Timestamp, {...})` emits a `$ref` to a component that does not
+  exist. The shared scalars deliberately carry no `$id` (a component per string
+  type), so nothing hoists them and the reference dangles.
+- Re-declaring `Type.String({ format: 'date-time', ... })` at the field drifts
+  from the shared schema silently — no gate compares the two.
+
+`{ ...Timestamp, description: 'field-specific' }` is the one that works.
+Measured on `@sinclair/typebox@0.34.52`: object spread copies TypeBox's own
+`Symbol(TypeBox.Kind)`, so the result is still a `TSchema`, `Type.Optional`
+accepts it, `Static<>` still resolves, and the emitted JSON keeps `format` and
+`examples` while taking the new `description`. Pair it with a case asserting
+the inherited annotation survived (`format` here) — a hand-written copy passes
+every other assertion in the file, and the leg that proves the difference is
+replacing the spread with a literal `Type.String`.
+
+## The contract-authoring conventions company.ts and card.ts set
+
+Three decisions the remaining schema tasks (`transaction.ts`, `dashboard.ts`,
+`contracts-service-b/invoice.ts`) should follow rather than re-derive, each
+already argued in the module it lands in:
+
+- **An identifier is an opaque bounded string, with no `format` and no
+  `pattern`.** The columns are `uuid` today; publishing `format: 'uuid'` would
+  make migrating off it a contract change — the same argument `MonetaryAmount`
+  makes for stating no ceiling over a 32-bit column. `minLength: 1` plus a
+  `maxLength` is a defensive bound on request-borne input, not a format claim,
+  and it is stated **per identifier** rather than factored into one shared
+  schema: two ids are two contract decisions, and one component is how
+  loosening one silently loosens the other.
+- **A contract enum is coarser than the database enum it maps from, and spelled
+  differently.** `cards.lifecycle_status` has five members; `CardState` has four
+  plus `unknown`, with `ordered`/`issued` folding onto `inactive` and
+  `terminated` published as `closed`. Assert the divergence explicitly (the
+  contract list must NOT contain the database's spellings) or a later
+  well-meant "align the vocabularies" turns every column rename into a breaking
+  change. That case is an absence, so it needs an inverting leg — adding the
+  database spelling — to be worth anything.
+- **Publish what the screen renders, and nothing more.** Removing a required
+  response property is breaking and forces spec §6.2's major version; adding
+  one is the additive change spec §6.1 lets a consumer author and ship the same
+  day. So the cheap direction is the one to leave room in, and a field is left
+  out until the screen asks for it. `CompanySummary` publishes 2 of the table's
+  4 columns for that reason. A derived schema would publish all four because
+  they happen to be there — the most concrete argument for spec §2.1 after the
+  "field with no column at all" one.
+
+Examples are aligned with `packages/db`'s seed (the seeded ids, `Company AB`,
+`4321`) and spelled as literals rather than imported, since this package must
+not depend on the db. Prism generates from `examples`, so matching them is what
+makes the mock answer like a running `service-a` — the property spec §6.1's
+unblocking workflow actually rests on.
+
+## Lint a contract package's schemas against the house ruleset before emit
+
+The "emitted document passes every house rule" test lands with the emit task,
+several tasks after the schemas are authored, so a schema that fails gate 2 is
+otherwise discovered late. The probe that closes the gap needs no contract and
+no emitter: hoist each `$id`-carrying schema into `components.schemas` under
+its id (deleting the `$id`, which is what `emitOpenApi` does), wrap them in a
+minimal `openapi: 3.1.0` document with one operation carrying an `operationId`
+and a 4xx `$ref`ing `#/components/schemas/Error`, and run
+`vacuum spectral-report -r rulesets/house.spectral.yaml -o probe.json`.
+
+Zero findings is only meaningful with the control beside it, for the reason
+recorded above — a ruleset can report nothing forever. Mutating the probe
+document (drop the enum's `unknown`, delete an `additionalProperties`) reported
+`house-enum-has-unknown-member` and
+`house-object-additional-properties-explicit`, which is what says the rules
+read these schemas. Note `$ref` resolution
+double-reported the second one, so read the codes and never a count.

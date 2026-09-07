@@ -2,10 +2,11 @@
  * Public surface of `@marcos-corp/contracts-service-a`.
  *
  * What has landed so far: the TypeBox primitives every operation reuses
- * (`./schemas/shared`) and the shared error payload every error response
- * references (`./schemas/error`). The company, card, transaction and dashboard
- * schemas and the ts-rest contract that exposes them land in later tasks and
- * are re-exported here as they do.
+ * (`./schemas/shared`), the shared error payload every error response
+ * references (`./schemas/error`), the company the selector lists
+ * (`./schemas/company`) and the card the screen renders (`./schemas/card`). The
+ * transaction and dashboard schemas and the ts-rest contract that exposes them
+ * land in later tasks and are re-exported here as they do.
  *
  * Consumers import their types from this module rather than from a generator —
  * spec §5's "types for consumers: from the contract package". Each schema is
@@ -23,6 +24,16 @@
  *   consumer rather than an implicit upgrade.
  */
 
+export {
+  CARD_STATES,
+  Card,
+  CardId,
+  CardState,
+} from './schemas/card';
+export {
+  CompanyId,
+  CompanySummary,
+} from './schemas/company';
 export {
   ERROR_CODES,
   ERROR_SCHEMA_ID,
