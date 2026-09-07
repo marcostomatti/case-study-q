@@ -4,9 +4,10 @@
  * What has landed so far: the TypeBox primitives every operation reuses
  * (`./schemas/shared`), the shared error payload every error response
  * references (`./schemas/error`), the company the selector lists
- * (`./schemas/company`) and the card the screen renders (`./schemas/card`). The
- * transaction and dashboard schemas and the ts-rest contract that exposes them
- * land in later tasks and are re-exported here as they do.
+ * (`./schemas/company`), the card the screen renders (`./schemas/card`), a
+ * transaction row (`./schemas/transaction`) and the aggregated dashboard
+ * payload (`./schemas/dashboard`). The ts-rest contract that exposes them lands
+ * in a later task and is re-exported here when it does.
  *
  * Consumers import their types from this module rather than from a generator —
  * spec §5's "types for consumers: from the contract package". Each schema is
@@ -35,6 +36,11 @@ export {
   CompanySummary,
 } from './schemas/company';
 export {
+  DASHBOARD_TRANSACTION_COUNT,
+  Dashboard,
+  SpendSummary,
+} from './schemas/dashboard';
+export {
   ERROR_CODES,
   ERROR_SCHEMA_ID,
   ErrorCode,
@@ -54,3 +60,11 @@ export {
   responseObject,
   Timestamp,
 } from './schemas/shared';
+export {
+  MERCHANT_CATEGORIES,
+  MerchantCategory,
+  TRANSACTION_SETTLEMENT_STATES,
+  Transaction,
+  TransactionId,
+  TransactionSettlementState,
+} from './schemas/transaction';

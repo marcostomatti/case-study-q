@@ -2127,3 +2127,65 @@ document (drop the enum's `unknown`, delete an `additionalProperties`) reported
 `house-object-additional-properties-explicit`, which is what says the rules
 read these schemas. Note `$ref` resolution
 double-reported the second one, so read the codes and never a count.
+
+## The spread idiom stops at `$id`, and gate 1 THROWS rather than warning
+
+Bounds the "reuse a shared TypeBox primitive ... by SPREAD" note above, which
+is true only for the scalars that carry no `$id`. `{ ...MonetaryAmount,
+description: 'field-specific' }` produces a second schema carrying `$id:
+'MonetaryAmount'` with different content, and `hoistComponent` in
+`packages/contract-tooling/src/schemaRepresentation.ts` refuses it:
+
+    emit gate cannot run: two different schemas, one of them at '<path>', both
+    carry $id 'MonetaryAmount', so one would be published under the other's name
+
+So the rule for any field reusing a hoisted object (`MonetaryAmount`, `Card`,
+`CompanySummary`, `Transaction`, `PageInfo`, `Error`): pass the schema itself
+and let it emit as a `$ref`. The field's meaning goes in the enclosing object's
+docblock, not on the property. A `$ref` with a sibling `description` is legal
+in OpenAPI 3.1, but TypeBox has no way to spell one without the spread that
+causes the throw above.
+
+The assertion that states the reuse, since a `$ref` is not visible in the
+TypeBox JSON round trip: read the property's surviving `$id`
+(`properties(X)['amount']?.['$id']` is `'MonetaryAmount'`). Comparing the
+property against `emitted(MonetaryAmount)` states reuse too, but per the
+convert-exactly-one-spelling note it then agrees with itself under any mutation
+to the shared schema — that claim belongs to `shared.test.ts`. Proven by
+mutation: replacing the reference with a hand-written inline copy reddens both
+the reuse case and the full-shape case, by name.
+
+## `$id` has a third case beyond "reused" and "scalar": an operation's response
+
+`shared.ts` records two: objects reused across operations carry an `$id`,
+scalars do not. Authoring `dashboard.ts` produced the third, and the remaining
+contract modules should follow it rather than re-argue it:
+
+- **An object an operation returns carries an `$id`**, even when one operation
+  returns it. That name is what a consumer's generated client binds to and what
+  the diff gate reports a change against.
+- **An object that exists only inside one shape does not** — the scalar
+  argument applied to a small object. `SpendSummary` is nested inside
+  `Dashboard`, named by nothing else, and inlined; a component for it would put
+  the two figures one indirection away from the field carrying them.
+
+Both are worth a case, because neither is visible in a `Static<>` type — the
+hoisted one asserts `emitted(X)['$id']` is `'X'`, the inlined one asserts
+`emitted(Y)` has no `$id` property at all.
+
+## `Type.Unsafe<T>`'s type parameter is invisible to every runtime assertion
+
+The sharpest instance of the `*.test-d.ts` split, and it applies to every
+contract enum in both packages, since `Type.Unsafe` is the repo idiom for one.
+Measured on the transaction enums: changing `Type.Unsafe<MerchantCategory>` to
+`Type.Unsafe<string>` emits **byte-identical JSON**, leaves all 86 runtime
+cases green, and reddens only `transaction.test-d.ts`. The consumer loses its
+union — the entire reason `Type.Unsafe` is used instead of a bare
+`Type.String({ enum })` — and the four-gate order reports it in exactly one
+place. Pin the union with `expectTypeOf<X>().toEqualTypeOf<'a' | ... |
+'unknown'>()` per enum, or the `Type.Unsafe` choice is unenforced.
+
+The mirror-image leg is worth keeping too: `Type.Union([Type.Literal(...)])`
+leaves the TypeScript union intact and drops the `enum` keyword, so
+`check-types` stays green and the JSON cases redden. Neither suite can make the
+other's claim.
