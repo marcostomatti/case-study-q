@@ -1,0 +1,84 @@
+# Findings
+
+## Workspace package layout (established by packages/db, reuse verbatim)
+
+Every leaf workspace package carries five files and nothing else at setup time:
+
+  <pkg>/package.json          name @marcos-corp/<x>, private, type module,
+                              exports/main/types -> ./src/index.ts,
+                              engines.node >=22, author + Apache-2.0 to match root
+  <pkg>/tsconfig.json         extends ../../tsconfig.base.json; adds lib ES2022,
+                              module ESNext, noUnusedLocals/Parameters,
+                              noImplicitReturns/This, noFallthroughCasesInSwitch;
+                              include ["src", "*.ts"];
+                              exclude ["node_modules","dist",".tmp","drizzle","**/*.test.ts"]
+  <pkg>/eslint.config.mjs     `import baseConfig from '../../eslint.base.mjs'`,
+                              exports [ {ignores:[...]}, ...baseConfig ]
+  <pkg>/vitest.config.ts      environment node, include ['src/**/*.test.ts']
+  <pkg>/src/index.ts          module placeholder (`export {};`) until real exports land
+
+Leaf scripts are exactly: `lint`: `eslint .`, `check-types`: `tsc --noEmit`,
+`test`: `vitest run`. All three run from the package directory, so each picks up
+its own leaf config with no extra flags.
+
+## Tooling devDependencies stay at the ROOT, not in leaf packages
+
+eslint, typescript, vitest, typescript-eslint, globals, jsonc-eslint-parser etc.
+are already root devDependencies and hoist into the top-level node_modules, so
+`bun run lint|check-types|test` inside a package resolves them without the
+package declaring anything. Do NOT re-declare them per package — that is version
+drift for no gain. Only declare a package's own *runtime* deps (drizzle-orm,
+@sinclair/typebox, express, ...). The ported reference package under
+.claude/worktrees/ duplicates devDeps because it was a standalone template; do
+not copy that part of it.
+
+## `--passWithNoTests` is temporary debt, not the convention
+
+A package created before its first suite exists needs `vitest run
+--passWithNoTests`, otherwise vitest exits 1 on "No test files found" and the
+plan's "test:all exits 0 across all eight packages" task cannot pass. The flag is
+recorded in that package's vitest.config.ts comment. **Drop the flag in the same
+task that adds the package's first test file** — left in permanently, a deleted
+suite goes green and unnoticed.
+
+## bun does NOT symlink a workspace package into node_modules until something depends on it
+
+`node_modules/@marcos-corp/` does not exist even after `bun install` registers
+`packages/db` in bun.lock (verified: the ported reference monorepo has no
+`node_modules/@ar` either, same setup). Consequence for any task wiring a
+cross-package import: the consumer must declare the dependency in its own
+package.json, or both `import/no-unresolved` and tsc will fail. Registering the
+workspace is not enough.
+
+## Root eslint leaf ignores `packages/**` but NOT `apps/**` or `services/**`
+
+`eslint.config.mjs` at the root ignores only `packages/**`. When `apps/*` and
+`services/*` land, root `bun run lint` will lint them with the ROOT config
+(whose import resolver points at `./tsconfig.json`, which excludes them), and
+`lint:all` will then lint them a second time through their own leaf config. The
+task that creates the first app or service must add `'apps/**'` and
+`'services/**'` to the root ignores block.
+
+## Prove a green gate actually read the files
+
+`eslint .` exiting 0 proves nothing on its own. Two cheap checks used here:
+  bunx eslint . -f json | ...        -> count + names of files actually linted
+  bunx tsc --noEmit --listFiles      -> the exact file set tsc type-checked
+and a throwaway violation file (e.g. a double-quoted string) to confirm the gate
+reddens before deleting it. Worth repeating for each new package.
+
+## Shell traps hit in this repo
+
+- The Bash tool's cwd PERSISTS between calls. A `cd packages/db` in one call
+  makes a relative `cd packages/db` in the next call fail. Use absolute paths.
+- The shell is zsh: `${PIPESTATUS[1]}` after a pipe reads the WRONG element and
+  a trailing `; echo $?` after a pipe reports the exit of the LAST stage (often
+  `tail`/`ls`), not the command under test. Capture with
+  `cmd > /tmp/x.log 2>&1; echo "EXIT=$?"` when the exit code is the evidence.
+
+## Verification order (from AGENTS.md), all four confirmed green with packages/db
+
+  bun run lint && bun run check-types && bun run test && bun run gate:control-bytes
+
+`gate:control-bytes` scans **tracked** files only, so a new package is outside
+its scope until it is committed — run it once more after the commit.

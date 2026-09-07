@@ -1,0 +1,22 @@
+{
+  "name": "@marcos-corp/db",
+  "version": "0.1.0",
+  "description": "Drizzle schema and migrations for the PoC services. Owned by the service teams; never a dependency of a contract package.",
+  "private": true,
+  "type": "module",
+  "author": "Marcos Tomatti <marcostomatti.cv@gmail.com>",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
