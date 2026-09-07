@@ -7,7 +7,11 @@
  * a contract that publishes a row type has published the database schema
  * whether or not any JavaScript is emitted.
  *
- * The generated migrations land in a later task and are re-exported from here.
+ * This module is also the `schema` entry of `drizzle.config.ts`, so it is
+ * what `bun run db:generate` diffs against the last snapshot: a table
+ * declared under `src/schema/` but not exported here reaches no migration,
+ * and "exported" and "migrated" therefore stay the same set. The generated
+ * SQL and its journal live in `drizzle/` and are never hand-edited.
  */
 
 export {

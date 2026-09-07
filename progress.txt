@@ -1602,3 +1602,98 @@ Spec §6.4's 13-month retention is **not** implemented — no partitioning, no
 rollup, no expiry job — and a case asserts no rollup column exists so it cannot
 be half-implemented here instead. `docs/field-retirement.md` records it as a
 documented requirement rather than a shipped one.
+
+## `drizzle-kit generate` EXITS 0 when it crashes on an interactive prompt
+
+The single most dangerous thing about wiring this command into a script, and it
+is silent in the worst direction. A column **rename** makes drizzle-kit ask
+"renamed, or dropped and added?"; in a non-TTY shell (an agent's Bash tool, CI)
+it throws `Error: Interactive prompts require a TTY terminal`, writes no
+migration at all, and **exits 0**. Measured on drizzle-kit 0.31.10.
+
+So `bun run db:generate; echo $?` is not a reading. What is:
+
+  `[✓] Your SQL migration file ➜ drizzle/NNNN_<name>.sql`  -> a file was written
+  `No schema changes, nothing to migrate 😴`               -> snapshot in sync
+  neither line                                             -> nothing happened
+
+The neighbouring exit codes, since they are not consistent with each other: a
+`schema` path matching no file exits **1** with a clear
+`No schema files found for path config [...]` and emits nothing, and an
+additive change (a new column, a new table) never prompts and exits 0 having
+written the file. Only rename-shaped diffs prompt. A CI step that generates
+must therefore assert the printed line, and a rename is a change a human runs
+interactively before committing.
+
+## Two controls that prove a committed drizzle snapshot is honest
+
+`drizzle/meta/*_snapshot.json` is the base every future migration diffs
+against, and a snapshot that does not describe the committed schema produces
+correct-looking SQL for a database nobody has. Neither gate in the verification
+order opens `drizzle/`, so this is hand-run per schema change:
+
+- **Idempotency.** Re-run `bun run db:generate`; it must print `No schema
+  changes, nothing to migrate`. A second migration file appearing means the
+  first one did not capture the schema.
+- **Liveness.** Copy `drizzle/` to `.tmp/drizzle-probe/`, point a throwaway
+  config at it, apply an **additive** mutation to a schema module, and confirm
+  a `0001_*.sql` carrying the expected `ALTER` appears. Then `git checkout` the
+  module and delete `.tmp/`. Without this, "no schema changes" is
+  indistinguishable from a config whose `schema` path resolves to something
+  else entirely.
+
+Use an additive mutation, never a rename — see the TTY note above, where a
+rename control exits 0 having done nothing and reads as a passing check.
+
+## Point drizzle-kit's `schema` at `src/index.ts`, not at `src/schema/*.ts`
+
+The glob also matches the colocated `*.test.ts` and `*.test-d.ts` modules,
+which drizzle-kit bundles and executes for their exports. Pointing at the
+package's own entrypoint avoids that and buys a second property worth having:
+"exported from `src/index.ts`" and "reaches a migration" become the same set,
+so a table nobody exports cannot silently miss the DDL.
+
+## drizzle-kit is a LEAF devDependency, and `generate` contacts no database
+
+Same exception as `@types/express` — the "tooling devDeps stay at the root"
+note is about *shared* tooling, and under bun's isolated linker the CLI and its
+`defineConfig` type must resolve from the package directory. It lands in
+`packages/db/node_modules/.bin/drizzle-kit`.
+
+`dbCredentials` is **not read by `generate`** — verified by running under
+`env -u DATABASE_URL`, which generated the full migration and exited 0.
+Generating is a pure diff between the schema modules and the last snapshot. So
+`drizzle.config.ts` carries `process.env.DATABASE_URL ?? ''` with no committed
+fallback connection string: a default there is how a migration ends up applied
+to whatever database happened to be listening, and it buys nothing for the one
+command that runs today.
+
+## Assert the generated DDL, not only the schema module — the SQL is what runs
+
+Four cross-checks worth re-running whenever a table or index is added, each of
+which the schema module states but only the SQL settles. All four passed for
+the initial migration:
+
+- **No identifier exceeds Postgres's 63-byte limit.** drizzle derives
+  constraint and index names by concatenation, so a composite key is the one
+  that goes over first (longest here:
+  `spend_limits_card_id_reset_period_period_started_at_pk`, 54 bytes) — and it
+  is truncated by Postgres rather than refused, which is worse.
+- **No `CREATE INDEX` carries `DESC` or `NULLS`.** That is the ascending-index
+  decision recorded above, and the emitted SQL is the only place it is visible.
+- **The `ON DELETE` split survives** — one `cascade`, four `restrict` here.
+- **A table that must own no foreign key still owns none.**
+
+`drizzle/` is outside `eslint` (leaf ignores `drizzle/**`) and outside `tsc`
+(leaf tsconfig excludes it), so nothing but `gate:control-bytes` ever opens
+those files. That gate accepts tab, newline and CR, so drizzle's tab-indented
+`CREATE TABLE` bodies pass unchanged.
+
+## `drizzle.config.ts` at a leaf root IS read by both leaf gates
+
+It matches the leaf tsconfig's `include: ["src", "*.ts"]` and is not in any
+ignores block, so `eslint .` and `tsc --noEmit` both cover it — confirmed with
+negative controls (a double-quoted string reddened lint; an invalid `dialect`
+literal reddened `check-types` with TS2322 naming the six legal dialects). That
+last one is worth knowing: drizzle-kit's config types are strict enough that a
+typo'd dialect or option is a `check-types` failure rather than a runtime one.

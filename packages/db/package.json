@@ -14,12 +14,16 @@
   "scripts": {
     "lint": "eslint .",
     "check-types": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.10"
   }
 }
