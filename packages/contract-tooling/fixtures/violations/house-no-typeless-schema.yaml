@@ -1,0 +1,75 @@
+# Violates rule 1 (house-no-typeless-schema) and nothing else.
+#
+# That rule's `given` is a seven-entry union, and a `given` entry that matches
+# nothing is silent coverage loss rather than an error. This document plants
+# one typeless schema at each covered position, so a single fixture proves all
+# seven entries are live:
+#
+#   given 1  $.components.schemas[...]        -> Empty, Bare
+#   given 2  $..properties[...]               -> Holder.properties.loose
+#   given 3  $..allOf[...]                    -> ComposedAllOf.allOf[0]
+#   given 4  $..anyOf[...]                    -> ComposedAnyOf.anyOf[0]
+#   given 5  $..oneOf[...]                    -> ComposedOneOf.oneOf[0]
+#   given 6  $..[?(@.items ...)].items        -> Listing.items
+#   given 7  $..[?(@.schema ...)].schema      -> the `q` parameter schema
+#
+# Both spellings the rule names are covered at given 1: `Empty` is the literal
+# `{}` case and `Bare` is the has-keys-but-no-type case.
+#
+# Everything else here is deliberately compliant so the reported code set stays
+# a single element: the operation carries an operationId and a 400 referencing
+# the shared Error schema (rule 5), Error and Holder set additionalProperties
+# (rule 2), no enum is declared (rule 3), nothing is deprecated (rule 4) and
+# nothing is nullable (rule 6).
+openapi: 3.0.3
+info:
+  title: Fixture - violates house-no-typeless-schema
+  version: 1.0.0
+paths:
+  /search:
+    get:
+      operationId: search
+      parameters:
+        - name: q
+          in: query
+          schema:
+            description: given 7 - a parameter schema with no type.
+      responses:
+        '200':
+          description: Results.
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+    Empty: {}
+    Bare:
+      description: given 1 - a top-level schema with no type.
+    Holder:
+      type: object
+      additionalProperties: false
+      properties:
+        loose:
+          description: given 2 - a property with no type.
+    ComposedAllOf:
+      allOf:
+        - description: given 3 - an allOf member with no type.
+    ComposedAnyOf:
+      anyOf:
+        - description: given 4 - an anyOf member with no type.
+    ComposedOneOf:
+      oneOf:
+        - description: given 5 - a oneOf member with no type.
+    Listing:
+      type: array
+      items:
+        description: given 6 - array items with no type.

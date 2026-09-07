@@ -1,0 +1,26 @@
+# Violates rule 4 (house-deprecated-requires-sunset), `defined` leg: the field
+# is marked deprecated with no x-sunset at all, so nothing tells a consumer
+# when it goes away and spec section 6.4 has no date to retire it against.
+#
+# Paired with house-deprecated-requires-sunset.malformed.yaml. The rule's
+# `then` is a two-entry array and each entry needs its own violating document:
+# vacuum's `pattern` function passes silently on an absent field, so this
+# fixture exercises `defined` only and leaves `pattern` unproven on its own.
+#
+# Compliant elsewhere: Card declares its type and additionalProperties
+# (rules 1-2), no enum, no nullable, and `paths` is empty so rule 5 has no
+# operation to select.
+openapi: 3.0.3
+info:
+  title: Fixture - violates house-deprecated-requires-sunset (absent)
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    Card:
+      type: object
+      additionalProperties: false
+      properties:
+        legacyState:
+          type: string
+          deprecated: true

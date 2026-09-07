@@ -1,0 +1,105 @@
+# Satisfies every rule in ../../rulesets/house.spectral.yaml: linting this
+# document must report zero findings.
+#
+# A clean run here is only meaningful if every rule's `given` actually reaches
+# a node in this document -- a passing fixture that matches nothing is
+# indistinguishable from a passing fixture that matches everything. Each rule
+# below therefore has at least one node it selects and then accepts, and the
+# suite in ../../src/lint.ts pins that by mutating one node per rule.
+#
+#   rule 1  no node is typeless: the two schemas that legitimately carry no
+#           `type` (MoneyOrAbsent, CardState) are excluded by the composition
+#           and enum arms of the predicate, not by never being visited
+#   rule 2  every `type: object` sets additionalProperties explicitly
+#   rule 3  CardState carries the required `unknown` member
+#   rule 4  the deprecated `legacyState` carries a well-formed x-sunset
+#   rule 5  the operation has an operationId and its 404 references the
+#           shared Error schema
+#   rule 6  no `nullable: true` and no type array containing "null"; Money
+#           carries `nullable: false`, which the rule must tolerate
+#
+# Shaped after the contract in .specs/01-bare-minimal-api-governance-poc.md so
+# the fixture reads as the API actually being governed rather than as filler.
+# OpenAPI 3.0.3, because `nullable` is a 3.0 keyword; the 3.1 spelling of the
+# same violation lives in ../violations/house-no-null.type-array.yaml.
+openapi: 3.0.3
+info:
+  title: Fixture - satisfies every house rule
+  version: 1.0.0
+paths:
+  /companies/{companyId}/dashboard:
+    get:
+      operationId: getCompanyDashboard
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The dashboard payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+        '404':
+          description: No such company.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    Dashboard:
+      type: object
+      additionalProperties: false
+      required: [card]
+      properties:
+        card:
+          $ref: '#/components/schemas/Card'
+    Card:
+      type: object
+      additionalProperties: false
+      required: [lastFour, state]
+      properties:
+        lastFour:
+          type: string
+        state:
+          $ref: '#/components/schemas/CardState'
+        # Tolerance case for rule 4: deprecated is allowed, with a date.
+        legacyState:
+          type: string
+          deprecated: true
+          x-sunset: '2027-01-31'
+    # Tolerance case for rule 1: an enum publishes its values, so it needs no
+    # `type` and must not be reported as typeless.
+    CardState:
+      type: string
+      enum: [active, frozen, unknown]
+    # Tolerance case for rule 1: a composition schema carries no `type` of its
+    # own and must not be reported as typeless.
+    MoneyOrAbsent:
+      anyOf:
+        - $ref: '#/components/schemas/Money'
+    Money:
+      type: object
+      additionalProperties: false
+      # Tolerance case for rule 6: the rule rejects `nullable: true`, not the
+      # presence of the `nullable` key.
+      nullable: false
+      required: [minorUnits, currency]
+      properties:
+        minorUnits:
+          type: integer
+        currency:
+          type: string

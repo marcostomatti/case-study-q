@@ -1,0 +1,17 @@
+# Violates rule 3 (house-enum-has-unknown-member) and nothing else: adding a
+# card state to this enum later is a silent break, because a consumer that has
+# not redeployed has no member to fall back to.
+#
+# Compliant elsewhere: the schema declares a `type` (rule 1), it is not an
+# object so rule 2 does not select it, nothing is deprecated, no nullable, and
+# `paths` is empty so rule 5 has no operation to select.
+openapi: 3.0.3
+info:
+  title: Fixture - violates house-enum-has-unknown-member
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    CardState:
+      type: string
+      enum: [active, frozen]

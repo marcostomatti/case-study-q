@@ -471,7 +471,7 @@ Two consequences past that:
 - `range.start.line` is correct even when the path is that raw filter, so it is
   the field to point a human at.
 
-## Reading vacuum from code: `lint` has no JSON, `spectral-report` always exits 0
+## Reading vacuum from code: `lint` has no JSON, and `spectral-report` has THREE outcomes
 
 `vacuum lint` exits 0 clean / 1 at error severity but has no JSON flag. The
 machine-readable path is `vacuum spectral-report -r <ruleset> -o <spec>`, which
@@ -480,6 +480,16 @@ there are findings**. Anything shelling out to it must derive pass/fail from the
 parsed array, not from the exit code. Finding fields: `code` (rule id), `path`
 (array), `message`, `severity`, `range.start.line`. Both YAML and JSON specs
 work, so the committed `openapi/*.json` artifacts lint directly.
+
+The exit-0 rule holds only while the spec **parses**. There is a third outcome,
+and it is the one that breaks a naive wrapper: on an unparseable spec vacuum
+exits **2** and writes an ANSI-coloured `✗ Failed to parse specification '<path>'`
+to **stdout**, not stderr. So `JSON.parse(stdout)` throws rather than returning
+an empty finding list, and the throw does not name the spec unless the raw
+stdout is kept. Any `lintSpec` has to branch on all three: exit 2 (unparseable,
+report the path), exit 0 with `[]` (clean), exit 0 with findings (fail). Note
+the blob carries ESC bytes, so never tee it into a tracked file -- that is
+exactly what `gate:control-bytes` and `house/no-unsafe-unicode` reject.
 
 vacuum is a documented prerequisite and is **not** installed on this machine.
 For local verification without touching the repo:
@@ -503,3 +513,52 @@ codes** each produces. Two legs that are easy to skip and were both needed here:
 Also worth a tolerance case per rule, not just a violation: the typeless-schema
 rule must **not** fire on an `anyOf`/`enum` schema that legitimately carries no
 `type`, and the null rule must not fire on `nullable: false`.
+
+## The house-rule fixtures exist now: `fixtures/<valid|violations>/`, keyed by filename
+
+`packages/contract-tooling/fixtures/` is the shared test data for the house
+ruleset, and every later gate task (`lint.ts`, `gates.ts`, the integration test,
+`pipeline-simulation`) should consume it rather than inlining its own spec
+strings. The contract downstream code depends on:
+
+- `violations/<rule-code>[.<leg>].yaml` must report `<rule-code>` and no other
+  code. **The expected code is the filename up to its first `.`**, so a suite
+  derives expectations instead of carrying a table that drifts when a rule is
+  added. The optional `.<leg>` segment names which `then` entry it exercises.
+- `valid/satisfies-all-rules.yaml` must report nothing.
+- Six rules, nine violation documents -- rules 4, 5 and 6 each carry a two-entry
+  `then`, and each entry needs its own document.
+
+Two closure checks worth re-running whenever a rule is added, both cheap and
+both catching a failure that is otherwise silent: no rule in the ruleset lacks a
+fixture, and no fixture names a rule that does not exist. A fixture whose name
+no longer matches a renamed rule still passes its own assertion.
+
+Assert the **set** of distinct codes, never a finding count: `$ref` resolution
+double-reports a violation on a referenced schema (measured: 1 planted breach on
+a `$ref`d schema -> 2 findings), so `toHaveLength(1)` is flaky by construction.
+
+## A mutation control that silently tests an EMPTY file instead of a mutation
+
+Bit me while proving these fixtures discriminate, and it is invisible because
+the control still reports the failure it was supposed to report -- for entirely
+the wrong reason. In Python, `open(p,'w')` is evaluated **before** the argument
+expression, so
+
+    open(p,'w').write(open(p).read().replace(a, b))   # WRONG - wipes the file
+
+truncates `p` to zero bytes and then reads the now-empty file. The "mutated"
+fixture is an empty file. A linter/parser then fails on it, the control prints
+the expected FAIL, and nothing about the run says the mutation never applied.
+Same trap in shell: `cmd < f > f` and `sed ... f > f` truncate before reading.
+
+Read first, write second, and assert the edit changed something:
+
+    src = open(p).read()
+    out = src.replace(a, b)
+    assert out != src, 'mutation did not apply'
+    open(q, 'w').write(out)
+
+The `assert out != src` is the load-bearing line -- it is what separates a
+control that mutated the file from one whose search string silently missed. Do
+the mutation on a copy under /tmp, never in the tracked tree.

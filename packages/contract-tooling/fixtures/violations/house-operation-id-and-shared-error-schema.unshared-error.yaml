@@ -1,0 +1,42 @@
+# Violates rule 5 (house-operation-id-and-shared-error-schema), `responses`
+# leg: the 404 inlines its own error shape instead of referencing
+# #/components/schemas/Error, which hands this consumer a different error body
+# to parse from every other operation's.
+#
+# The operationId here is deliberately present, isolating the second `then`
+# entry from the first. This is the leg that needs the rule's
+# `resolved: false`: under the default resolved document the shared schema is
+# inlined and this hand-rolled lookalike would be indistinguishable from it.
+#
+# Compliant elsewhere: the inline error object sets additionalProperties and
+# every schema declares a type (rules 1-2), no enum, nothing deprecated, no
+# nullable. The shared Error schema is declared but unreferenced on purpose.
+openapi: 3.0.3
+info:
+  title: Fixture - violates house-operation-id-and-shared-error-schema (error shape)
+  version: 1.0.0
+paths:
+  /companies:
+    get:
+      operationId: listCompanies
+      responses:
+        '200':
+          description: Companies.
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  msg:
+                    type: string
+components:
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string

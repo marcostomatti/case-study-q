@@ -1,0 +1,29 @@
+# Violates rule 6 (house-no-null), `type` schema leg: the OpenAPI 3.1 spelling,
+# a type array containing "null". Same convention breach as the `nullable`
+# fixture beside it, different keyword, which is why the rule needs both `then`
+# entries and both fixtures.
+#
+# This is the one fixture declaring 3.1.0: type arrays are not valid in 3.0,
+# so the version is load-bearing rather than incidental.
+#
+# Note for anyone reading the reported path: this finding renders as the raw
+# filter `[?(@/nullable || @/type)][0]` rather than as a document path, because
+# vacuum cannot render a path into the resolved copy of a node. `range.start.
+# line` is still correct and is the field to point a human at.
+#
+# Compliant elsewhere: Company declares its type and additionalProperties
+# (rules 1-2), no enum, nothing deprecated, and `paths` is empty so rule 5 has
+# no operation to select.
+openapi: 3.1.0
+info:
+  title: Fixture - violates house-no-null (type array)
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    Company:
+      type: object
+      additionalProperties: false
+      properties:
+        tradingName:
+          type: [string, 'null']

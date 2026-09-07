@@ -1,0 +1,25 @@
+# Violates rule 4 (house-deprecated-requires-sunset), `pattern` leg: x-sunset
+# is present but is not an ISO-8601 calendar date, so it cannot be compared,
+# sorted or acted on by the retirement flow in spec section 6.4.
+#
+# Paired with house-deprecated-requires-sunset.absent.yaml -- see the note
+# there for why one fixture per `then` entry is required rather than one per
+# rule.
+#
+# Compliant elsewhere: identical to the absent fixture apart from the x-sunset
+# value.
+openapi: 3.0.3
+info:
+  title: Fixture - violates house-deprecated-requires-sunset (malformed)
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    Card:
+      type: object
+      additionalProperties: false
+      properties:
+        legacyState:
+          type: string
+          deprecated: true
+          x-sunset: Q1 2027

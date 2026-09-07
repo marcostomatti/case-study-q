@@ -1,0 +1,21 @@
+# Violates rule 2 (house-object-additional-properties-explicit) and nothing
+# else: `Company` is `type: object` and never states additionalProperties, so
+# it is silently permissive and the request-strictness half of spec section 2.5
+# is unenforceable on it.
+#
+# Compliant elsewhere: `Company` and its property both declare a `type`
+# (rule 1), no enum, nothing deprecated, no nullable, and `paths` is empty so
+# rule 5 has no operation to select.
+openapi: 3.0.3
+info:
+  title: Fixture - violates house-object-additional-properties-explicit
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    Company:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string

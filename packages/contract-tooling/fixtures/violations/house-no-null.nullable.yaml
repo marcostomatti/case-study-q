@@ -1,0 +1,25 @@
+# Violates rule 6 (house-no-null), `falsy` leg: the OpenAPI 3.0 spelling,
+# `nullable: true`. It gives a consumer two empty cases that mean the same
+# thing, where spec section 2.5 fixes one convention -- absent means not
+# applicable, and null is never emitted.
+#
+# Paired with house-no-null.type-array.yaml, which carries the 3.1 spelling of
+# the same convention breach against the rule's second `then` entry.
+#
+# Compliant elsewhere: Company declares its type and additionalProperties
+# (rules 1-2), no enum, nothing deprecated, and `paths` is empty so rule 5 has
+# no operation to select.
+openapi: 3.0.3
+info:
+  title: Fixture - violates house-no-null (nullable)
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    Company:
+      type: object
+      additionalProperties: false
+      properties:
+        tradingName:
+          type: string
+          nullable: true
