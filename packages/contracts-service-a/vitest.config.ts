@@ -1,8 +1,9 @@
 import { defineConfig } from 'vitest/config';
 
-// Colocated suites only. `bun run test` currently passes with no test files
-// (see the --passWithNoTests flag in package.json); drop that flag in the
-// task that adds this package's first suite.
+// Colocated suites only. `*.test.ts` is what runs here; the `*.test-d.ts`
+// siblings beside each schema module are type-level and are read by
+// `bun run check-types` instead, since the leaf tsconfig excludes `**/*.test.ts`
+// and that glob does not match them.
 export default defineConfig({
   test: {
     environment: 'node',
