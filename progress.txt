@@ -108,3 +108,46 @@ In a leaf package, `eslint .` and `tsc --noEmit` cover DIFFERENT file sets:
 Two consequences: a badly formatted package.json fails `lint`, not
 `check-types`; and a type error inside a leaf `eslint.config.mjs` is invisible
 to every gate in the verification order.
+
+## bun uses the ISOLATED linker: a leaf's runtime deps are NOT hoisted to root
+
+The devDependency note above is true only for the ROOT. A dep declared by a
+leaf is symlinked into `packages/<pkg>/node_modules/` and never appears in the
+top-level `node_modules/` (real copies sit under `node_modules/.bun/`).
+Verified with @sinclair/typebox and @ts-rest/core.
+
+- Leaf runtime deps resolve for `lint`/`check-types` only because those scripts
+  run FROM the package dir. Never "fix" a leaf import by adding the dep at root.
+- `ls node_modules | grep <dep>` at the root is a false-negative install check;
+  read `packages/<pkg>/node_modules/`, or `node_modules/.bun/`, which carries
+  the resolved version in the directory name.
+
+## @ts-rest/core peers zod OPTIONALLY, so the root zod override is not a conflict
+
+`@ts-rest/core@3.52.1` (the `latest` tag; there is no v4) declares
+`peerDependencies.zod: ^3.22.3`, which looks like a clash with root
+`overrides.zod: 4.5.1`. It is not — `peerDependenciesMeta` marks zod and
+@types/node **optional**, and zod is not installed at all. Check
+`npm view <pkg> peerDependenciesMeta` before working around a peer warning.
+
+## Prove a new dependency resolves, with a negative control
+
+Gates stay green whether or not a declared dep is importable, so declaring one
+and re-running them proves nothing. Per package that adds a runtime dep:
+write `src/__probe.ts` importing it and using a real export; `bunx tsc
+--noEmit` and `bunx eslint src/__probe.ts` must both exit 0 (eslint's
+`import/no-unresolved` covers what tsc does not); then break it deliberately
+(type error, then an import of a nonexistent package) and confirm each gate
+exits non-zero; then delete the probe and re-run. Without the negative control
+a green run is indistinguishable from a gate that read nothing.
+
+## Two deltas specific to `packages/contracts-*`
+
+- Leaf `eslint.config.mjs` must ignore `openapi/**`: those packages commit
+  emitted `openapi/openapi.json` and `openapi/published/<version>.json`, and
+  the jsonc plugin in `eslint.base.mjs` makes every committed .json a lint
+  target otherwise.
+- The manifest `version` is API surface, not bookkeeping — consumers pin it
+  exactly with no range specifier (spec 2.2) and a gate enforces that, so
+  bumping it is the reviewable event. The packages still stay `private: true`;
+  "published" here means the committed OpenAPI document, never an npm registry.
