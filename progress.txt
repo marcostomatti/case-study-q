@@ -1200,3 +1200,66 @@ few, and its index signature only admits `` `x-${string}` ``. JSON Schema
 document and are a type error to write into a `SchemaObject` literal. Build the
 node as `Record<string, unknown>` and cast once, at the one boundary where the
 document is right and the interface is narrow.
+
+## `runGates` composes the four gates; call it rather than sequencing them again
+
+`packages/contract-tooling/src/gates.ts` exports `runGates(options)` returning
+a `GateReport`, plus `GATE_ORDER`, `DEFAULT_GATE_RUNNERS` and the
+`GateName`/`GateStatus`/`GateOutcome`/`GateRunners` types.
+`scripts/pipeline-simulation.ts`, the CI contracts job and acceptance scripts
+01-03 should go through it: spec section 8's order is a governance decision,
+not a convenience, and a second hand-sequenced copy of it drifts silently.
+
+- **Two entry points.** `{ contract, meta }` runs all four gates;
+  `{ specPath }` runs gates 2-4 against a document that already exists and
+  reports gate 1 as `skipped`. Exactly one of the two, enforced at runtime as
+  well as in the type — both or neither throws `gate runner cannot run:`.
+  `contractPackageDir` is required either way, because gate 3 resolves its
+  baseline from it and gate 4 scans it.
+- **Gates 2 and 3 read a scratch copy of what gate 1 just built**, written
+  under `tmpdir()` and removed in a `finally`, never
+  `openapi/openapi.json`. Linting the committed artifact would report on the
+  last emit rather than on the change under review. The committed artifact is
+  kept honest separately, by each contract package's byte-identity test.
+- **`report.outcomes` is always all four gates in `GATE_ORDER`.** Gates after
+  a failure carry status `not-run`; `report.failure` is the failed outcome,
+  carrying a `summary` and a `reasons` list built from that gate's findings.
+- **Four statuses, and three of them are not `passed`.** `skipped` means the
+  gate had nothing to do (no contract supplied, or no baseline published yet)
+  and says nothing about the contract — it must not short-circuit anything
+  and must not make `ok` false. `not-run` means an earlier gate failed.
+- **Same failure/cannot-run split as every other gate here**, and it is what
+  makes `ok: false` mean "the contract is bad" rather than "the CI machine is
+  missing a binary". Gate 1's two throws are discriminated on
+  `instanceof UnrepresentableSchemaError` — that one becomes a failed gate,
+  every other error propagates untouched.
+
+## Ordering and short-circuiting are invisible in a returned report
+
+Applies to `scripts/pipeline-simulation.ts` and to anything else that
+composes steps. An implementation that runs every step and then labels the
+later ones `not-run` returns a byte-identical report to one that stops — while
+still spawning both Go binaries and scanning a package tree. Asserting the
+statuses proves neither claim; the report agrees with itself whatever ran.
+
+What does prove it is a recorded seam: an injectable set of step functions
+that logs `(name, args)` per call, then assertions against the call log —
+`toEqual([...])` for the order, `not.toContain(name)` for the steps that must
+never have run. Two things that seam then needs, or it quietly becomes the
+thing under test:
+
+- **Assert the defaults are the real functions, by identity.** A seam nobody
+  checks is how the production path stops calling a real gate while every case
+  stays green. `expect(DEFAULT_GATE_RUNNERS.lint).toBe(lintSpec)` is the whole
+  check.
+- **Never build the recorder by spreading the real defaults.** A recorder that
+  falls through for anything it was not told about spawns a binary or reads
+  the filesystem, and the case that forgot an override fails for a reason
+  unrelated to the composition.
+
+Proven by four mutations, each predicted by case name before running and each
+reddening exactly those: dropping the early return after a failed gate (2
+red), moving the cheapest gate first — the plausible naive implementation (8
+red), dropping the `instanceof` discrimination on gate 1's two throws (1 red),
+and reporting a `skipped` gate as `passed` (1 red). Related global skills:
+`mutation-leg-grids`, `prove-reuse-with-a-counting-accessor`.

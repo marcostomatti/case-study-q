@@ -6,8 +6,14 @@
  * `latestPublishedSpec` is what supplies `diffSpecs` with its base document.
  * `assertExactContractPins` sits beside those four rather than inside them: it
  * reads a consumer's manifest rather than a contract package, and CI runs it
- * as its own job. The gate runner that composes the four lands in a later task
- * and is re-exported here alongside them.
+ * as its own job.
+ *
+ * `runGates` composes the four in spec section 8's order and is what a caller
+ * should reach for. Calling them individually is fine for a one-off, but the
+ * order is a governance decision rather than a convenience, so anything
+ * running all four — `scripts/pipeline-simulation.ts`, the CI contracts job,
+ * the acceptance scripts — should go through the runner rather than sequence
+ * them again.
  *
  * `runBinary` is deliberately not exported: it is how this package starts a
  * gate binary, not something a caller should reach for. Anything needing
@@ -35,6 +41,17 @@ export {
   OPENAPI_VERSION,
   UnrepresentableSchemaError,
 } from './emit';
+export type {
+  GateName,
+  GateOutcome,
+  GateReport,
+  GateRunners,
+  GateStatus,
+  RunGatesFromContractOptions,
+  RunGatesFromDocumentOptions,
+  RunGatesOptions,
+} from './gates';
+export { DEFAULT_GATE_RUNNERS, GATE_ORDER, runGates } from './gates';
 export type {
   LintFinding,
   LintOptions,
