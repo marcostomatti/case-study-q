@@ -1,0 +1,77 @@
+# CODEOWNERS -- who must approve a change to each path.
+#
+# This file is the mechanism behind spec section 3: authorship is separated
+# from ownership. A consumer team authors a contract change as a pull request
+# against a contract package it does not own; the provider team that owns that
+# package approves it. Nobody waits on backend capacity to get a contract
+# written, and nobody merges a contract the provider has not seen.
+#
+#
+# THE HANDLES BELOW ARE PLACEHOLDERS
+#
+# `@marcos-corp/team-a` and `@marcos-corp/team-b` are written in GitHub's
+# org/team form to match the `@marcos-corp/*` package scope, but they resolve
+# to nothing on this repository, which is owned by a user account rather than
+# an organisation. GitHub does not fail a push, a pull request, or a check on
+# an unresolvable owner: the rule simply matches no reviewer, and the approval
+# requirement disappears with no warning anywhere. Replace both handles with
+# real users or teams before treating any of this as enforced -- that swap is
+# tracked in `.plans/PREREQUISITES-01-bare-minimal-api-governance-poc.md`.
+#
+#
+# HOW THESE RULES ARE READ
+#
+# - Last match wins. Unlike .gitignore, ownership does not accumulate across
+#   matching lines: the final matching rule for a path is the only one that
+#   applies. The blocks below do not overlap, so no rule here is shadowed --
+#   keep it that way, or list the more general pattern first.
+# - A leading `/` anchors the pattern to the repository root. Without it,
+#   `packages/db/` would also match a `packages/db/` nested anywhere deeper in
+#   the tree.
+# - Two owners on one line means either one can satisfy the requirement for
+#   those paths, not that both must approve. A pull request that touches a
+#   team-a-only path AND a team-b-only path needs one approval from each,
+#   because each path's own owner set has to be satisfied.
+# - Paths not listed here have no owner. CODEOWNERS only ever adds a review
+#   requirement; it never removes the repository's default one.
+# - None of this is binding until branch protection on `main` requires review
+#   from code owners. Until then these lines request reviewers and document
+#   intent, which is not the same as a gate.
+
+
+# --- Team A ------------------------------------------------------------------
+
+# Provider. Owns the contract that web-a, web-b and service-b all consume, so
+# this is the path where cross-team pull requests land for approval.
+/packages/contracts-service-a/   @marcos-corp/team-a
+/services/service-a/             @marcos-corp/team-a
+
+# Consumer, same team as its provider. The "no ceremony needed" case: a change
+# spanning web-a and service-a needs one team's approval, not two.
+/apps/web-a/                     @marcos-corp/team-a
+
+
+# --- Team B ------------------------------------------------------------------
+
+# Provider of invoices, and consumer of service-a. Ownership shifts by path,
+# not by team: team B owns these, and opens pull requests against
+# `packages/contracts-service-a/` like any other consumer.
+/packages/contracts-service-b/   @marcos-corp/team-b
+/services/service-b/             @marcos-corp/team-b
+
+# Consumer across a team boundary. web-b needing a field from service-a is the
+# governance case this whole repository exists to demonstrate.
+/apps/web-b/                     @marcos-corp/team-b
+
+
+# --- Shared between both teams -----------------------------------------------
+
+# The database schema is owned by the service teams jointly and is explicitly
+# not a dependency of any contract package (spec section 3). Joint ownership
+# here is deliberate: a column rename must be visible to both teams, because
+# the mapping layer that absorbs it lives in each service.
+/packages/db/                    @marcos-corp/team-a @marcos-corp/team-b
+
+# The shared CI machinery -- house ruleset, emit, diff, mock, dependency and
+# pin checks. Whoever changes a gate changes it for both teams, so both own it.
+/packages/contract-tooling/      @marcos-corp/team-a @marcos-corp/team-b

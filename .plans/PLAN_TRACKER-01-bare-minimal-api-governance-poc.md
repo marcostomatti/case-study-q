@@ -123,7 +123,7 @@ extending `../../eslint.base.mjs` and a leaf `tsconfig.json` extending
 - [x] Create `services/service-a` as a bun workspace package named `@marcos-corp/service-a` with the same four config files, an Express dependency, `@ts-rest/express`, and a `dev` script
 - [x] Create `services/service-b` as a bun workspace package named `@marcos-corp/service-b`, mirroring the `service-a` package configuration
 - [x] Create `apps/web-a` and `apps/web-b` as bun workspace packages named `@marcos-corp/web-a` and `@marcos-corp/web-b`, each a plain TypeScript consumer with no framework dependency, each carrying the same four config files
-- [ ] Run `bun install` and confirm `bun run lint:all`, `bun run check-types:all` and `bun run test:all` each exit 0 across all eight workspace packages, recording the per-package output lines in the commit message
+- [x] Run `bun install` and confirm `bun run lint:all`, `bun run check-types:all` and `bun run test:all` each exit 0 across all eight workspace packages, recording the per-package output lines in the commit message
 
 `bun run --filter '@marcos-corp/*' <script>` prints one prefixed line per
 package. A package whose script is a placeholder `echo` also exits 0 — read the

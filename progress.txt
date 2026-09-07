@@ -285,3 +285,50 @@ with code 0`. Every one of the 45 passing tests belongs to the ROOT suite over
 no-ops. Any later task claiming coverage from a leaf must read that leaf's own
 `Test Files N passed` line, not the aggregate exit — and should drop that leaf's
 `--passWithNoTests` in the same commit that adds its first suite.
+
+## No lint gate reads YAML or extensionless files -- only the byte gate does
+
+`eslint.base.mjs` declares `files:` for js/mjs/cjs/ts/tsx/jsx/md/json and
+nothing else. So `.github/CODEOWNERS`, `.github/workflows/*.yml`,
+`docker/compose.yaml` and `packages/contract-tooling/rulesets/*.yaml` are
+outside `lint`, `lint:all` and `check-types` entirely. The only gate that ever
+opens them is `gate:control-bytes`, and that one scans **tracked** files, so a
+brand-new YAML or extensionless config is read by nothing at all until it is
+committed. A green four-gate run after adding one is not evidence the file is
+well-formed -- whatever validity check that file deserves has to be written or
+run by hand in the same task.
+
+## A path-pattern config that matches nothing fails silently -- check it, with a control
+
+CODEOWNERS, workflow `paths:` filters and ruleset globs all share the failure
+mode: a typo'd or wrong-case path is not an error, it just owns/triggers
+nothing, and the file still reads as correct. Cheap check that catches it --
+for every non-comment rule, count the tracked files the pattern actually
+matches:
+
+  grep -vE '^\s*(#|$)' <file> | while read -r pat rest; do
+    printf '%-34s %s\n' "$pat" "$(git ls-files -- "${pat#/}" | wc -l)"
+  done
+
+Pair it with a negative control in the same run (a nonexistent sibling, a
+misspelling, a case variant) or a check that reports a nonzero count for
+everything is indistinguishable from one that works. Both were run for
+`.github/CODEOWNERS`: 8 rules x 5 tracked files each, 0 for all three controls.
+
+## CODEOWNERS semantics that the plan's prose does not imply
+
+Relevant to `docs/ownership.md`, the CI `paths:` filters and acceptance script
+05, all of which reason about who approves what:
+
+- **Last match wins.** Ownership does NOT accumulate across matching lines the
+  way .gitignore rules do; the final matching rule is the only one that applies.
+  List general patterns before specific ones.
+- **A leading `/` anchors to the repo root.** `packages/db/` without it also
+  matches any nested `packages/db/` deeper in the tree.
+- **Two owners on one line means EITHER may approve**, not both. To require two
+  approvals you need the PR to touch two paths with disjoint owner sets.
+- **An unresolvable handle matches nobody, with no error.** The org/team form
+  `@marcos-corp/team-a` cannot resolve on a user-account repo like this one, so
+  every rule here is documentation until the handles are swapped (tracked in
+  `.plans/PREREQUISITES-*.md`) and branch protection on `main` requires
+  code-owner review.
