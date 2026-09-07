@@ -7,8 +7,8 @@
  * a contract that publishes a row type has published the database schema
  * whether or not any JavaScript is emitted.
  *
- * The remaining tables (invoices, api_usage) and the generated migrations land
- * in later tasks and are re-exported from here.
+ * The remaining table (api_usage) and the generated migrations land in later
+ * tasks and are re-exported from here.
  */
 
 export {
@@ -19,6 +19,13 @@ export {
   type NewCard,
 } from './schema/cards';
 export { companies, type Company, type NewCompany } from './schema/companies';
+export {
+  invoicePaymentState,
+  invoices,
+  type Invoice,
+  type InvoicePaymentState,
+  type NewInvoice,
+} from './schema/invoices';
 export {
   spendLimitResetPeriod,
   spendLimits,

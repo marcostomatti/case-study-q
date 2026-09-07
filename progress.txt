@@ -1487,3 +1487,44 @@ denormalised child (`transactions.card_id` + `transactions.company_id`) do
 **not** enforce that the child's company matches the card's. That needs a
 composite key against `cards (id, company_id)`. Record the invariant and its
 owner in the module header rather than leaving it to be found in a bad row.
+
+## A drizzle column's `mode` is invisible to `getSQLType()` — only `.test-d.ts` sees it
+
+Sharpens the "runtime and type assertions are not redundant" note above with the
+case where the runtime suite is not merely weaker but structurally blind.
+`date`, `timestamp`, `bigint`, `numeric` and `json` all take a `mode` option
+that decides the **TypeScript** type and changes nothing in SQL. Measured on
+`invoices.due_on`: all three of `mode: 'string'`, `mode: 'date'` and the default
+render `getSQLType() === 'date'`, so `columnFacts` cannot tell them apart.
+
+Flipping `mode: 'string'` to `'date'` reddened `check-types` with 2 errors, both
+in `invoices.test-d.ts`, and left all 40 runtime cases **green**. So for any
+mode-bearing column the `.test-d.ts` is not a second opinion — it is the only
+gate in the four-gate order that fails, and a table whose type suite omits it
+has no coverage of that decision at all. Pin the field's type explicitly per
+mode-bearing column, the same way money columns are pinned as `number`.
+
+The repo convention the mode encodes, worth matching in the remaining tables:
+an **instant** is `timestamp({ withTimezone: true, mode: 'date' })` reaching
+TypeScript as a `Date` (`booked_at`, `activated_at`, `period_started_at`); a
+**calendar day** is `date({ mode: 'string' })` reaching it as an ISO
+`YYYY-MM-DD` string (`invoices.due_on`), because a `Date` for a calendar day
+carries a time-of-day nobody chose and renders as the previous day for a reader
+in another zone.
+
+## A "delete the declaration" mutation leg reddens `check-types` for the wrong reason
+
+Mutation-grid trap, general to every leaf here: the leaf tsconfigs set
+`noUnusedLocals`, so a leg that removes the only *use* of something orphans its
+import and `tsc` reports an unused-import error. Deleting an `index(...)` call
+reddened `check-types` with 2 errors — in the schema module, not in any test —
+which reads as "the type suite covers indexes" when the type suite never saw it.
+
+Two habits that keep the grid honest, both cheap:
+
+- Read **which file** the tsc errors are in, never just the count or the exit
+  code. An error in the module under mutation is usually the mutation's own
+  collateral; an error in a `*.test-d.ts` is the claim you were testing.
+- Prefer a leg that *changes* a declaration over one that deletes it (rename the
+  column, flip the `onDelete`, swap the `mode`). A change keeps every binding
+  used, so the only red left is the assertion you predicted.
