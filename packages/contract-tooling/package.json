@@ -26,6 +26,7 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "@sinclair/typebox": "^0.34.52"
+    "@sinclair/typebox": "^0.34.52",
+    "yaml": "^2.9.0"
   }
 }

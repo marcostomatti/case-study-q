@@ -1263,3 +1263,52 @@ red), moving the cheapest gate first — the plausible naive implementation (8
 red), dropping the `instanceof` discrimination on gate 1's two throws (1 red),
 and reporting a `skipped` gate as `passed` (1 red). Related global skills:
 `mutation-leg-grids`, `prove-reuse-with-a-counting-accessor`.
+
+## A published baseline is JSON; the fixtures are YAML. Convert, never copy
+
+`latestPublishedSpec` recognises `<major>.<minor>.<patch>.json` and ignores
+everything else, so a scratch `openapi/published/` seeded with a `.yaml`
+fixture resolves to `null` and gate 3 reports `skipped` — a passing report
+about a gate that never ran. Copying the fixture under a `.json` name works
+(oasdiff will diff a JSON base against a YAML revision — measured, mixed pairs
+are fine) but publishes a file that is not what it claims to be.
+
+`yaml@^2.9.0` is therefore a devDependency of `@marcos-corp/contract-tooling`,
+used only by `src/gates.integration.test.ts` to convert a fixture into the JSON
+document a contract package would actually commit. It resolves to the copy
+openapi3-ts already pulled in, so it adds nothing to the tree. Anything else
+seeding a published baseline — `scripts/pipeline-simulation.ts`, the acceptance
+scripts, the CI publish step — should do the same.
+
+## The scratch contract package every gate consumer needs, in one place
+
+`src/gates.integration.test.ts` builds one and it is the minimum the four gates
+can be pointed at: a `package.json` for gate 4 to read, one `src/*.ts` for it
+to scan (an empty tree passes gate 4 for a reason that has nothing to do with
+the gate), and optionally `openapi/published/<version>.json` for gate 3. Reuse
+that shape rather than rediscovering it, and build it under `mkdtemp` — never
+in the tracked tree.
+
+## Make `not-run` a claim by sharing one package across two cases
+
+`not-run` is a statement about ordering, and a report says it whether or not it
+is true — the gate after a failure was going to pass anyway, usually. The pair
+that fixes it: run the failing-earlier-gate case against a package that *also*
+breaks the later gate, and run a second case against **that same package** with
+only the document changed, showing the later gate does fail when reached. Then
+`not-run` means "there was something to find and nobody looked". Cost: one
+shared fixture and one extra case.
+
+Generalises the recorder-seam note above from `gates.test.ts`: the seam proves
+ordering with stubs, this proves it with the real gates and no seam at all.
+
+## Measure an integration suite's coverage boundary; do not assume it
+
+Mutating each gate in `gates.ts` and predicting the red set by name (7 legs,
+each matching) produced one result worth keeping: disabling the **lint** gate
+entirely reddened **zero** cases. Every fixture the integration suite runs is
+house-clean, so an end-to-end suite over valid input cannot pin a gate that
+only fires on invalid input — `lint.test.ts` owns that claim and the docblock
+says so. Run the "disable this gate" mutation for every gate a composed suite
+touches; the ones that redden nothing are the boundary, and writing it down
+stops the next reader from over-reading the suite.

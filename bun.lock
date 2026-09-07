@@ -41,6 +41,7 @@
       },
       "devDependencies": {
         "@sinclair/typebox": "^0.34.52",
+        "yaml": "^2.9.0",
       },
     },
     "packages/contracts-service-a": {

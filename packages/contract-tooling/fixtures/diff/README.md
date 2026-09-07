@@ -31,6 +31,13 @@ diff, so a baseline that failed `../../rulesets/house.spectral.yaml` would stop
 a composed run before the diff gate was ever reached — and the diff gate would
 then read as passing. Every revision here is house-clean for the same reason.
 
+`../../src/gates.integration.test.ts` is that composed run. It publishes
+`base.yaml` as `openapi/published/1.0.0.json` in a scratch contract package,
+because `latestPublishedSpec` recognises `<major>.<minor>.<patch>.json` only —
+a published baseline is the emitted JSON document, not a YAML fixture. It
+converts this file rather than copying it under a `.json` name, so anything
+written here has to survive a YAML-to-JSON round trip.
+
 ## What oasdiff actually treats as breaking
 
 Two asymmetries decide which edits are in which directory. Both are easy to get
