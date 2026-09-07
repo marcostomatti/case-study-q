@@ -43,11 +43,12 @@ Understanding that a challenge is only the result of an expectation meeting a re
 | Want parallel work                                 | Org                         | Main Goal                                            |
 
 
+
 ## Deliverables
 
 ### Task 1: Presentation
 
-check PRESENTATION.md
+Look [here](./PRESENTATION.md) for the presentation deliverable.
 
 ### Task 2: API Implementation
 #### Database Schema and Payload Response
