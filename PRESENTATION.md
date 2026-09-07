@@ -11,7 +11,10 @@
 5. Challenging previous divergence assumptions as it is not a problem per se. It is the cost of independent deployability (reason to break down monoliths). Stopping divergence is return to a monolithic (although distributed) architecture . So we need to embrace divergence, but control it.
 
 
-## Solution: Governance and enforcing control mechanisms 
+## Solution: Governance and enforcing control mechanisms
+
+### Ownership
+This is the backbone of the solutions below, proper ACL ruling and repo/registry integration for each projects/packages (if working on a monorepo or package) or repository allows a collaborator (eg: consumers) to propose and comment on API schema changes as requirement arrive allowing for the provider team to give final approval. 
 
 ### Governance 
 
@@ -36,9 +39,11 @@ This is the current scenario level, in a consumer-driven, but producer written c
 - Human are still the main source of drift as control remains internal and manual. Eg: A classic scenario is that a consumer/provider pact blocks a hotfix at 2am; someone adds an ignore-like patch rule. The ignore is never removed; six months later half the pacts are stale and nobody knows which half. Once the bypass is normalized, the system is decorative but still costs full price in CI minutes and ceremony.
 
 ##### Tier 3: bilateral, infrastructural
-Schema registry with compatibility modes (eg: backward, forward, full) and/or versioning. This is not recommended if we have a low number of consumers (< 5) and a low number of producers (< 5). A registry first approach wouldn't be an ideal suggestion in most situations, but the cas study given problem space / industry. It is highly regulated, requires strict compliance and audits.
-- Catches mechanical compatibility, centrally, at registration time, for every producer at once. Eg: A consumer proposes a type change on a field is rejected immediately by the registry without the producer having to implement it and test it.
-- Ownership remains as is. Teams own their schemas, but the registry enforces the ruleset. The registry is a central authority that can be used to enforce rules and ensure that all teams are following the same guidelines.
+Here we open the door to inter/intra domain considerations, so we need to address first if the API is gonna be used by services using other language/stack and if we can combine it with any other existing solutions for those.
+- If we're using kafka, Confluent SR might be available already, also Protobuf or Apicurio could be present in some stacks. In this situation leveraging an schema registry is a good option as it Catches mechanical compatibility, centrally, at registration time. 
+- For a pure TS/NodeJS stack, we can use scoped NPM packages with strict semver (no `~`,`^`, etc) exporting schemas and types, along with CI tooling to block deployment/publish on invalid schema checks. 
+
+For any option **ownership** remains as is, and the key factor for success. Teams own their schemas, and/or packages. The pipeline or the registry enforces the ruleset when collaboration and updates happen.
 
 ##### Tier 4: organizational level
 This is the highest level of governance. It falls into the domain of an API review board, which is a cross-functional team that reviews and approves API changes before they are implemented. This ensures that all teams are aligned on the API design and that any potential conflicts are resolved before they become issues. This is mostly required for exposed APIs with an unknown number of public consumers. It falls outside of the scope of this case study but previous tiers organization highly simplify the work and implementation of this tier.
@@ -51,8 +56,16 @@ This is the highest level of governance. It falls into the domain of an API revi
 - Wiring between tiers should not be tool based (fully auto generated specs). This prevents leaking/persisting internal implementation details, or even mistakes.
 
 
-#### Control mechanisms
+### Control mechanisms
+
+1. Tier 0 and 1. These are pre-requisites to any higher tier.
+   - Emit a spec artifact from runtime validators: `Zod` + `@asteasolutions/zod-to-openapi`, or `TypeBox` if we're using Fastify or prioritize OpenAPI tooling. Depending on data structure weight TypeBox could result in a better performance at runtime. If we prefer project maturity/ecosystem, or popular frameworks support `zod` is the option. Both have their pros and cons. But considering tier 3 our ideal goal, `TypeBox` is ultimately a better option, `zod` can produce JSON Schemas but regular usage via `.refine`, `.transform` or `.brand` have undesired results (validations via refine are not exported, transform usage is considered a different shape thant the intended schema) so it may produce a silent divergence if not use properly. In short, we can summarize the difference as `zod` being a parser, `TypeBox` a schema builder. So one shouldn't necessarily be used to replace the other, and each can be used when looking into building schemas at different tiers. 
+   - Breaking-change control via CI: `oasdiff`. 
+   - Track consumer identity `client_id` on requests logs. Later will help identify integration issues, adoption progress, etc. 
+2. Tier 2. Up to this level everything is inter-team decision or domain level standardization at most. Depending on project/repo structure, library stack and decided CI requirements we pick one of these:
+   1. Shared contract package implementing `ts-rest` / `oRPC` and `@quobix/vacuum` leveraging existing stack (TS + zod). It give us compile-time coverage but doesn't necessarily acts as a strong deploy check. Useful if all consumers use TS, we have a repo/project structure supporting packages. 
+   2. `@pact-foundation/pact` + `pact-foundation/pact-broker` implementing `pact-broker can-i-deploy`. This option is a better option for a hard failure at deploy time if contracts are not met, or if consumer and client are a cross language stack. On the other hand it requires its own self-hosted stack (Docker + Postgres). 
+3. Tier 3. Here we start at a domain level agreement, at least. It could turn into a cross domain concern moving forward. Depending on domains (language, tooling, competence level, etc) there would be clear options for a Schema Registry approach if this is a requirement for other stacks. Assuming we remain in our TS/node stack we can leverage the tooling defined in 1 and 2 still holds.
 
 > [!note] Stack assumed: TypeScript/Node + PostgreSQL + DrizzleORM. 
-> The decision to include **DrizzleORM** is for illustrative purposes mostly. This ORM library was picked as it is an industry standard library as it produced highly typed data specs based on DB schema definitions. In this scenario it introduces a conflict point, whenever an internal data spec definition is deferred to the ORM, API schemas should prevent leakage of db level definitions as well as control tools should cover mismatch and missing wiring between auto generated types/schemas. 
-
+> The code example will probably include **DrizzleORM** for illustrative purposes mostly. I picked this ORM as it is an industry standard library. Is liked because it produces highly typed specs based on DB schema definitions. In this scenario it introduces a conflict point, whenever an internal data spec definition is deferred to the ORM, additional mapping needs to be done to help API schemas prevent leakage of db level definitions. This is accompanied by control tools that should cover mismatch and missing wiring between auto generated types/schemas as well. Eg: if they're all auto generated on every other feature chang and re-defined from migration to migration. 
