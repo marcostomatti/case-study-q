@@ -1957,3 +1957,95 @@ requirement — but the CI job running `test:all` should still set
 `TEST_DATABASE_URL` against a `services: postgres` container rather than rely on
 the runner image happening to ship `/usr/lib/postgresql/*/bin`. Recorded in
 `.plans/PREREQUISITES-*.md` under its own heading, with both routes.
+
+## `Type.Union([Type.Literal(...)])` emits no `enum` keyword, so house rule 3 never sees it
+
+The single most consequential thing to know before authoring the remaining
+contract enums (card state, settlement state, merchant category, invoice
+payment state). Measured on `@sinclair/typebox@0.34.52`:
+
+  Type.Union([Type.Literal('a'), Type.Literal('unknown')])
+      -> {"anyOf":[{"const":"a","type":"string"}, ...]}     no `enum` key
+  Type.Enum(SomeTsEnum)                                     same, `anyOf`
+  Type.Unsafe<'a'|'unknown'>({ type: 'string', enum: [...] })
+      -> {"type":"string","enum":["a","unknown"]}           a real enum
+
+House rule 3's `given` is `$..[?(@.enum)]`, so the two idiomatic TypeBox
+spellings produce an enum a human reads as an enum, a consumer switches on as
+an enum, and the `unknown`-member rule never fires against. The rule stays
+green and spec §2.5 stops being enforced on that schema.
+
+`Type.Unsafe<T>` is therefore the repo idiom for a contract enum: it emits the
+`enum` array and keeps the TypeScript union. Pair it with a `const CODES = [...]
+as const` and derive both the type (`(typeof CODES)[number]`) and the array, so
+the union and the published list cannot drift. Verified end to end: emitted
+through `emitOpenApi`, vacuum reports nothing; drop the `unknown` member from
+the same document and it reports `house-enum-has-unknown-member`.
+
+## `Omit<Options, K>` over a TypeBox option type is a guard that states nothing
+
+`SchemaOptions` carries `[prop: string]: any`, and `ObjectOptions`,
+`StringOptions` and the rest all extend it. So
+`Omit<ObjectOptions, 'additionalProperties'>` drops every *named* member,
+keeps the index signature, and admits `additionalProperties` — plus anything
+else — straight back. It compiles, it reads as a restriction, and it restricts
+nothing.
+
+Spell the allowed options as an explicit `interface` with no index signature
+instead; excess-property checking on an object literal is then a real
+`check-types` failure. And prove it with an `@ts-expect-error` line plus its
+control: swap the forbidden key for a legal one and confirm tsc reports
+**TS2578 Unused '@ts-expect-error' directive**. Without that control a guard
+that never bites is indistinguishable from one that does.
+
+## Two things `packages/contracts-service-a/src/schemas/shared.ts` now owns
+
+Later schema tasks in either contract package should import these rather than
+restate them:
+
+- **`responseObject` / `requestObject`.** Spec §2.5's asymmetry is encoded in
+  the builder, not at the call site: responses get `additionalProperties: true`
+  (a consumer must tolerate a field its pinned version predates), requests get
+  `false`. Every object in a contract goes through one of them, which is what
+  makes house rule 2 satisfied by construction.
+- **The `$id` convention.** `emitOpenApi` hoists on `$id`, so objects reused
+  across operations carry one and scalars do not — a component per string type
+  pushes the constraint one indirection away from the field it constrains. A
+  query or path-parameter container must **not** carry one either: those are
+  exploded into `parameters`, so the component would be referenced by nothing.
+
+`MonetaryAmount`, `Timestamp`, `PageInfo`, `paginatedResponse`,
+`PaginationQuery` and `ErrorResponse` are the primitives; the error schema's
+`$id` is the literal `Error` house rule 5 hard-codes.
+
+## Assert a schema through `JSON.parse(JSON.stringify(schema))`, not the object
+
+TypeBox attaches `Kind` and friends as enumerable symbol properties, which
+vitest's `toEqual` compares and no gate in this repo ever reads. The JSON round
+trip is exactly the reduction `emitOpenApi` writes into the document, so it is
+both the honest assertion and the one that does not fight the library.
+
+Two TypeBox emission facts worth knowing before writing the expectation:
+`Type.Object({})` emits **no** `required` key at all (not `[]`), and an object
+whose properties are all `Type.Optional` does the same. An absent key and an
+empty list are different documents; assert whichever one is true.
+
+One trap when a nested expectation reuses a sibling's emitted JSON
+(`{ currency: emitted(CurrencyCode) }`): that portion then agrees with itself
+under any mutation to `CurrencyCode`, so the claim has to be owned by that
+schema's own case. Fine as long as the case exists — the mutation grid is what
+shows which one reddened. Skill: `convert-exactly-one-spelling`.
+
+## Two lint/type traps that cost a red run each in a heavily-documented module
+
+- **A JSDoc containing a glob that ends in `*/` terminates the comment.**
+  Writing the tsconfig exclude glob for test files inside a docblock is a
+  *parsing error* from eslint pointing at the line after it, which reads as a
+  syntax problem in the code rather than in the prose. Rephrase, or break the
+  sequence.
+- **A `const` used only in a type position fails
+  `@typescript-eslint/no-unused-vars`** ("assigned a value but only used as a
+  type"). In a `*.test-d.ts` that is the normal shape. Use an instantiation
+  expression in the type query instead —
+  `Static<ReturnType<typeof paginatedResponse<typeof Schema>>>` — which needs
+  no binding at all.
