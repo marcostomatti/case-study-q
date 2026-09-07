@@ -276,15 +276,17 @@ on a mismatched `packageManager` field, so that line documents intent only. Read
 trusting the manifest, and expect CI's bun to differ from the local one unless
 the workflow pins it explicitly with `oven-sh/setup-bun`.
 
-## A green `test:all` currently proves nothing about the eight leaves
+## A green `test:all` says almost nothing about the leaves — read the leaf line
 
-Extends the `--passWithNoTests` note above with the measured state: all eight
-leaf packages carry the flag and all eight print `No test files found, exiting
-with code 0`. Every one of the 45 passing tests belongs to the ROOT suite over
-`tools/`. So `test:all` exiting 0 is a statement about the root plus eight
-no-ops. Any later task claiming coverage from a leaf must read that leaf's own
-`Test Files N passed` line, not the aggregate exit — and should drop that leaf's
-`--passWithNoTests` in the same commit that adds its first suite.
+Extends the `--passWithNoTests` note above with the measured state. Seven of
+the eight leaves still carry the flag and still print `No test files found,
+exiting with code 0`; only `packages/contract-tooling` has dropped it, and its
+20 cases are the only leaf coverage in the repo. Every other passing test
+belongs to the ROOT suite over `tools/`. So `test:all` exiting 0 is a statement
+about the root, one real leaf and seven no-ops. Any task claiming coverage from
+a leaf must read that leaf's own `Test Files N passed` line, not the aggregate
+exit — and must drop that leaf's `--passWithNoTests` in the same commit that
+adds its first suite.
 
 ## No lint gate reads YAML or extensionless files -- only the byte gate does
 
@@ -562,3 +564,109 @@ Read first, write second, and assert the edit changed something:
 The `assert out != src` is the load-bearing line -- it is what separates a
 control that mutated the file from one whose search string silently missed. Do
 the mutation on a copy under /tmp, never in the tracked tree.
+
+## `test:all` now REQUIRES vacuum on PATH — the CI task must account for it
+
+`packages/contract-tooling/src/lint.test.ts` shells out to the real `vacuum`
+binary, so from this commit on `bun run test:all` (and that leaf's `bun run
+test`) fails without it. Stubbing vacuum was rejected on purpose: a stub proves
+the suite parses its own fixtures, not that the house rules fire, which is the
+entire claim the ruleset rests on.
+
+Consequences for later tasks:
+
+- The `.github/workflows/ci.yml` job that runs `test:all` must install the
+  pinned `vacuum` before it, not only the `contracts` job. Same for `oasdiff`
+  once `diffSpecs` has a suite.
+- Un-provisioned machines fail loudly rather than green: `beforeAll` makes one
+  vacuum call, so the whole file reports a single pointed error and 20 skips
+  instead of 20 lookalike failures. Copy that shape for the oasdiff suite.
+- `$VACUUM_BIN` overrides the binary (verified with a negative control). It is
+  the escape hatch for a CI runner that installs to a non-PATH location.
+- Local probe install, since vacuum is a prerequisite rather than a dependency:
+  `npm install --prefix /tmp/vacuum-probe @quobix/vacuum@0.30.3`, then prepend
+  `/tmp/vacuum-probe/node_modules/.bin` to PATH.
+
+## Exit 2 from a gate binary has TWO causes; conflating them hides a dead gate
+
+Refines the vacuum-outcomes note above, and applies just as much to `oasdiff`
+and to anything else `gates.ts` composes. Measured on vacuum 0.30.3: exit 2
+covers an unparseable document under test, an unreadable document, a missing
+ruleset AND a malformed ruleset. The first is a fact about the document; the
+rest mean the gate never ran. A wrapper that reports all four the same way
+turns "the gate is broken" into "your spec is broken", and the reverse is worse.
+
+The split that works, and the repo convention it matches:
+
+- Pre-check the paths yourself with `existsSync` before spawning. vacuum
+  reports missing spec and missing ruleset with the same exit code and
+  distinguishes them only by message wording, which breaks on upgrade.
+- Discriminate the remaining exit 2 on whether the output names the SPEC path
+  (stable) rather than on the wording (fragile). It does for a parse failure;
+  it does not for a ruleset failure.
+- Then follow `tools/control-byte-gate`: the document being bad is a returned
+  finding, the gate being unable to run is a throw. A gate that cannot run must
+  never be mistaken for a gate that passed.
+- Prefer the binary's **stderr** for the human text: vacuum writes a clean
+  `Error: ...` line there and an ANSI-coloured banner to stdout.
+
+A related silent pass with no defence at this layer: a ruleset whose rules are
+nonsense (unknown function, `given` that matches nothing) exits 0 with `[]`.
+Only per-rule fixtures catch that.
+
+## Two leaf-gate rules that cost a red run each time they are rediscovered
+
+Both bit while writing the first leaf suite; both apply to every remaining
+`src/*.ts` in this repo.
+
+- `@stylistic/multiline-ternary: 'always'` means EVERY ternary spans three
+  lines, including a short one inside an object spread. `--fix` handles it, but
+  the failure reads as a formatting opinion rather than a rule.
+- `NodeJS.ErrnoException` fails `no-undef`: `eslint.base.mjs` registers node
+  globals but no `NodeJS` namespace type. Spell it `Error & { code?: string }`.
+
+## A leaf's `*.test.ts` is linted but never type-checked
+
+Sharpens the "what each leaf gate actually reads" note above with the half that
+matters now that leaves have suites. Measured on `packages/contract-tooling`:
+
+  eslint .                8 files, INCLUDING src/lint.test.ts
+  tsc --noEmit --listFiles  3 files, EXCLUDING it
+
+The leaf tsconfig excludes `**/*.test.ts` by design (parity with the root), and
+vitest transpiles without checking. So a type error in a test file passes all
+four gates in the verification order. To check one deliberately, run tsc
+against the file directly with the leaf's flags — it is not something the gates
+will ever tell you:
+
+  bunx tsc --noEmit --strict --noUncheckedIndexedAccess --module ESNext \
+    --moduleResolution bundler --target ES2022 --skipLibCheck \
+    --esModuleInterop --types node src/<file>.test.ts
+
+## You cannot write an ANSI-stripping regex literal in this repo
+
+Corollary of the control-byte gate that any code reading a Go binary's coloured
+output runs into. A `/\x1b\[[0-9;]*m/` literal is fine, but the moment the real
+byte lands in the file — an agent write path decoding JSON collapses the
+four-hex escape — `gate:control-bytes` and `house/no-unsafe-unicode` both
+reject it, and `eslint`'s `no-control-regex` objects to the escape form. Build
+it from the code point instead, which sidesteps both:
+
+  const ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
+Skill: `ascii-source-unicode-via-codepoints`.
+
+## `lintSpec` is the first gate to land; reuse it rather than re-shelling out
+
+`packages/contract-tooling/src/lint.ts` exports `lintSpec(specPath, options?)`
+returning `{ ok, errors, findings }`, plus `HOUSE_RULESET_PATH` (resolved from
+`import.meta.url`, so it is correct from any cwd) and `SPEC_PARSE_FAILED`.
+`gates.ts`, the `contracts-service-*` "emitted document passes every house
+rule" tests and `scripts/pipeline-simulation.ts` should all call it rather than
+spawning vacuum themselves. `src/index.ts` re-exports each module's types and
+values as they land; add to it in the same task that adds the module.
+
+`errors` is the severity-`error` subset of `findings` and `ok` is derived from
+it, so a rule added at `warn` is reported without blocking. Assert against
+`errors` for gate behaviour and `findings` when the claim is "vacuum said
+nothing at all".

@@ -1,8 +1,9 @@
 import { defineConfig } from 'vitest/config';
 
-// Colocated suites only. `bun run test` currently passes with no test files
-// (see the --passWithNoTests flag in package.json); drop that flag in the
-// task that adds this package's first suite.
+// Colocated suites only. `src/lint.test.ts` shells out to the real `vacuum`
+// binary, so `bun run test` here requires the documented prerequisite to be
+// on PATH (or $VACUUM_BIN to point at it) — a stubbed vacuum would prove the
+// suite parses its own fixtures rather than that the house rules fire.
 export default defineConfig({
   test: {
     environment: 'node',

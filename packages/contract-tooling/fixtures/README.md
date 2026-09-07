@@ -71,4 +71,6 @@ no JSON.
 These are YAML on purpose: no lint gate in this repo reads `.yaml`, but a
 fixture that cannot explain in a comment which rule it targets and why it
 targets nothing else is not much of a fixture. They are validated by vacuum
-itself, through the suite in `../src/lint.ts`.
+itself, through the suite in `../src/lint.test.ts`, which shells out to the
+real binary rather than to a stub — a stubbed vacuum would prove that suite
+parses these files, not that these rules fire on them.
