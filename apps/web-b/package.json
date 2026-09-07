@@ -1,0 +1,22 @@
+{
+  "name": "@marcos-corp/web-b",
+  "version": "0.1.0",
+  "description": "Consumer of @marcos-corp/contracts-service-a, owned by a different team than service-a. Plain TypeScript with no framework: this is the cross-team case the governance model exists for, so it carries the response-tolerance and unknown-enum proofs.",
+  "private": true,
+  "type": "module",
+  "author": "Marcos Tomatti <marcostomatti.cv@gmail.com>",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@marcos-corp/web-a",
+  "version": "0.1.0",
+  "description": "Consumer of @marcos-corp/contracts-service-a, owned by the same team that owns service-a. Plain TypeScript with no framework: it exists to prove exact contract pinning, response tolerance and unknown-enum handling, not to render the mobile view.",
+  "private": true,
+  "type": "module",
+  "author": "Marcos Tomatti <marcostomatti.cv@gmail.com>",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

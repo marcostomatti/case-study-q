@@ -226,3 +226,17 @@ that actually answer it:
 
   grep '<pkg>' bun.lock              -> workspace entry + resolution line
   ls <pkg>/node_modules              -> the isolated linker's per-leaf symlinks
+
+## A dependency-free leaf gets NO `<pkg>/node_modules` at all
+
+Refines the two notes above about the isolated linker. `ls <pkg>/node_modules`
+only answers "did the leaf's own runtime deps link"; for a leaf that declares
+none (apps/web-a, apps/web-b, packages/db, packages/contract-tooling) the
+directory is never created, so its absence reads as a failed install when
+nothing is wrong. To confirm a workspace registered, read `bun.lock` — both the
+`"<glob>/<pkg>": { "name": "@marcos-corp/<pkg>" }` workspace entry and the
+`"@marcos-corp/<pkg>": ["@marcos-corp/<pkg>@workspace:<glob>/<pkg>"]`
+resolution line — and confirm the package appears in the
+`bun run --filter '@marcos-corp/*' <script>` output. Such a leaf still lints,
+type-checks and tests green because every tool it uses is a hoisted root
+devDependency.

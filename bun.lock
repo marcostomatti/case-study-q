@@ -22,6 +22,14 @@
         "vitest": "^4.1.7",
       },
     },
+    "apps/web-a": {
+      "name": "@marcos-corp/web-a",
+      "version": "0.1.0",
+    },
+    "apps/web-b": {
+      "name": "@marcos-corp/web-b",
+      "version": "0.1.0",
+    },
     "packages/contract-tooling": {
       "name": "@marcos-corp/contract-tooling",
       "version": "0.1.0",
@@ -124,6 +132,10 @@
     "@marcos-corp/service-a": ["@marcos-corp/service-a@workspace:services/service-a"],
 
     "@marcos-corp/service-b": ["@marcos-corp/service-b@workspace:services/service-b"],
+
+    "@marcos-corp/web-a": ["@marcos-corp/web-a@workspace:apps/web-a"],
+
+    "@marcos-corp/web-b": ["@marcos-corp/web-b@workspace:apps/web-b"],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.3", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || ^2.0.0-alpha.4", "@emnapi/runtime": "^1.7.1 || ^2.0.0-alpha.4" } }, "sha512-UMduMbqO5s5zF2NkNacMT/yK5Y5QiKvWr2+50bzIIxFDwVJ2h49b+oyjaCGPhJxd2/gC2x39EHv/gHVuu36x2Q=="],
 

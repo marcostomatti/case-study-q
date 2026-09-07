@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "@marcos-corp/web-b",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["src", "*.ts"],
+  // *.test.ts is excluded from check-types (parity with the root tsconfig —
+  // vitest executes them; tsc doesn't gate them).
+  "exclude": ["node_modules", "dist", ".tmp", "**/*.test.ts"]
+}
