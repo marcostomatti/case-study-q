@@ -7,10 +7,14 @@
  * a contract that publishes a row type has published the database schema
  * whether or not any JavaScript is emitted.
  *
- * The remaining table (api_usage) and the generated migrations land in later
- * tasks and are re-exported from here.
+ * The generated migrations land in a later task and are re-exported from here.
  */
 
+export {
+  apiUsage,
+  type ApiUsageEvent,
+  type NewApiUsageEvent,
+} from './schema/apiUsage';
 export {
   cardLifecycleStatus,
   cards,

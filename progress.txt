@@ -1528,3 +1528,77 @@ Two habits that keep the grid honest, both cheap:
 - Prefer a leg that *changes* a declaration over one that deletes it (rename the
   column, flip the `onDelete`, swap the `mode`). A change keeps every binding
   used, so the only red left is the assertion you predicted.
+
+## A mutation grid over a module cannot redden an *absence* case — invert those
+
+Every leg in a schema mutation grid changes something the module declares, so
+it reaches only the cases that assert presence. A case asserting the opposite —
+no foreign key, no rollup column, no unique index, no `overdue` member — stays
+green under all of them, which reads as "covered" and is not. The grid needs a
+second half whose legs **add** the thing each guard forbids:
+
+  add a FK to a parent table   -> the "declares no foreign key" case
+  add a `call_count` column    -> the "stores no derived figure" case
+  `index()` -> `uniqueIndex()` -> the "makes neither index unique" case
+  column key -> `primaryKey({})` -> the "keys on the surrogate column" case
+
+Ten legs over `api_usage` (seven changing, three inverting) reddened all nine of
+its cases; the changing seven alone reached six. Cheap, and it is the only thing
+separating a guard that holds the line from a sentence in a test file. Global
+skill: `accepting-cases-need-inverted-legs`.
+
+## A type-changing mutation must fix the import, or 9 cases VANISH and read as red
+
+Sharpens the `--reporter=basic` note above with the shape it actually takes in
+this repo. Swapping `smallint('x')` for `integer('x')` without adding `integer`
+to the `drizzle-orm/pg-core` import makes the module fail to load, so vitest
+reports:
+
+  Tests  40 passed (40)      exit 1     <- the whole file never ran
+  Tests  1 failed | 48 passed (49)      <- what the mutation actually proves
+
+Both are exit 1. The tell is the **total**: 49 dropped to 40, i.e. the nine
+cases disappeared rather than failing. A grid driver that reads only the exit
+code records the leg as proven when nothing was measured. Always assert the
+total case count is unchanged before reading which cases went red — and prefer
+legs that keep every binding used, per the `noUnusedLocals` note above.
+
+## `bigserial` joins the mode-bearing columns that `getSQLType()` cannot see
+
+Adds to the `date` / `timestamp` / `bigint` / `numeric` / `json` list above.
+`bigserial` renders as `bigserial` under both `mode: 'number'` and
+`mode: 'bigint'`, so `columnFacts` cannot tell a `number` id from a `bigint`
+one and the colocated `.test-d.ts` is the only gate in the four-gate order that
+fails when it changes. Measured: flipping the mode left all 49 runtime cases
+green and reddened `check-types` in `apiUsage.test-d.ts` alone.
+
+Also worth knowing before asserting one: a bare `bigserial(...)` reports
+`notNull: false` — the serial default does not imply it. Only `.primaryKey()`
+or an explicit `.notNull()` sets it.
+
+## `api_usage` inverts the naming rule the rest of the schema follows — do not "fix" it
+
+`packages/db/src/schema/apiUsage.ts` is the telemetry table spec §2.3 requires,
+and the four later tasks that read it are `services/service-a`'s
+`usageLogger.ts`, acceptance script 04 (§9.4), `docs/field-retirement.md` (§6.4)
+and the affected-consumer list a major version needs (§6.2). Two properties it
+does not share with its five siblings, both deliberate and both easy to
+"correct" into a bug:
+
+- **Its columns are spelled exactly like the contract vocabulary**, not
+  deliberately unlike it. The divergence rule exists because a contract derived
+  from a table publishes the schema (spec §2.1); this table publishes nothing
+  and *describes* a contract, so `client_id`, `operation_id` and
+  `contract_version` matching the emitted document's own spelling is the entire
+  point — a rename breaks the join and buys nothing. A case asserts the
+  agreement, so the "fix" fails rather than lands.
+- **It declares no foreign key at all.** A telemetry row must outlive the rows
+  it describes: `RESTRICT` would let a log entry block an operational delete and
+  `CASCADE` would erase the evidence. Asserted as `toEqual([])` with a comment
+  saying why, because an empty list next to five tables that all reference their
+  parent otherwise reads as an oversight.
+
+Spec §6.4's 13-month retention is **not** implemented — no partitioning, no
+rollup, no expiry job — and a case asserts no rollup column exists so it cannot
+be half-implemented here instead. `docs/field-retirement.md` records it as a
+documented requirement rather than a shipped one.
