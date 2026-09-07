@@ -1,11 +1,11 @@
 /**
  * Public surface of `@marcos-corp/contract-tooling`.
  *
- * `lintSpec` is gate 2 and `diffSpecs` is gate 3 of the four blocking gates
- * in spec section 8, and `latestPublishedSpec` is what supplies `diffSpecs`
- * with its base document. The OpenAPI emitter, the `@marcos-corp/db`
- * dependency check, the exact-pin check and the gate runner that composes
- * them land in later tasks and are re-exported here alongside them.
+ * `lintSpec` is gate 2, `diffSpecs` is gate 3 and `assertNoDbImport` is gate 4
+ * of the four blocking gates in spec section 8, and `latestPublishedSpec` is
+ * what supplies `diffSpecs` with its base document. The OpenAPI emitter, the
+ * exact-pin check and the gate runner that composes them land in later tasks
+ * and are re-exported here alongside them.
  *
  * `runBinary` is deliberately not exported: it is how this package starts a
  * gate binary, not something a caller should reach for. Anything needing
@@ -20,6 +20,12 @@ export type {
   DiffResult,
 } from './diff';
 export { diffSpecs } from './diff';
+export type {
+  DependencyFinding,
+  ManifestDependencyFinding,
+  SourceImportFinding,
+} from './dependencyCheck';
+export { assertNoDbImport, DB_PACKAGE_NAME } from './dependencyCheck';
 export type {
   LintFinding,
   LintOptions,

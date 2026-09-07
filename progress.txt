@@ -834,3 +834,102 @@ test — writing one version into that same directory afterwards and asserting
 it is now found is what separates "the directory is empty" from "the resolver
 looked somewhere else entirely". Same reason the diff fixtures carry the
 "revision actually differs" guard.
+
+## `ts.preProcessFile` answers "does this package import X" — do not hand-roll it
+
+`assertNoDbImport` needs to see every way a source file can reach a package,
+and the obvious implementations are all silently wrong. TypeScript's own
+preprocessor is already in the repo and gets all of it right, in five lines:
+
+    import ts from 'typescript';
+    ts.preProcessFile(source, /* readImportFiles */ true,
+                      /* detectJavaScriptImports */ true).importedFiles
+    // -> [{ fileName, pos, end }]  pos is the offset of the specifier's first
+    //    character, quote excluded, so the line is
+    //    source.slice(0, pos).split('\n').length
+
+Measured on typescript 5.9.3. It **does** report `import ... from`, `import
+type`, a bare side-effect `import 'x'`, `export * from`, a dynamic `import()`,
+and an import wrapped across lines. It **does not** report an import inside a
+`//` or `/* */` comment, nor one quoted inside a string literal — both of which
+contain every character a search would look for and neither of which is a
+dependency. `detectJavaScriptImports` is the flag that adds `require()`; with
+it `false`, a CommonJS require of the package is invisible.
+
+`typescript` is therefore a **runtime `dependencies` entry** of
+`@marcos-corp/contract-tooling` (pinned `^5.9.3`, same range as the root
+devDependency), not a devDependency: `dependencyCheck.ts` is part of the
+package's exported surface. It is already in `bun.lock`, so CI needs no extra
+step for it — unlike vacuum and oasdiff, this gate has no external binary.
+
+## `assertNoDbImport` is gate 4, and `null`-style "clean" is a returned `[]`
+
+`packages/contract-tooling/src/dependencyCheck.ts` exports
+`assertNoDbImport(contractPackageDir)` returning `DependencyFinding[]`, plus
+`DB_PACKAGE_NAME`. `gates.ts`, `scripts/pipeline-simulation.ts`, acceptance
+script 03 and the `contracts-service-*` "declares no dependency on the db"
+tests should all call it rather than scanning the tree themselves.
+
+- `DependencyFinding` is a **discriminated union** on `kind`:
+  `manifest-dependency` carries `field`, `source-import` carries `line`. Both
+  carry `kind`, `file`, `specifier` and `message`, so a caller that only
+  prints findings needs no narrowing; one that reads `field` or `line` does.
+- It scans the manifest's four versioned dependency fields plus both
+  `bundle`/`bundledDependencies` spellings, and every `.ts/.tsx/.mts/.cts/
+  .js/.jsx/.mjs/.cjs` file in the package outside `node_modules`, `dist`,
+  `build`, `coverage`, `.tmp` and `.git`. Skipping `node_modules` is
+  load-bearing: the isolated linker symlinks a leaf's dependencies there.
+- Same split as `lintSpec`/`diffSpecs`/`latestPublishedSpec`: the package
+  being bad is a returned finding, the gate being unable to run is a throw
+  (directory missing, no `package.json`, manifest not JSON). Every "cannot
+  run" message starts `dependency gate cannot run:` — assert that wording, not
+  just the offending path, or the case also passes against a check that merely
+  lets an ENOENT escape.
+- **Type-only imports count.** `import type { Card } from '@marcos-corp/db'`
+  emits no JavaScript and costs nothing to install, and is exactly the shape
+  spec 2.1 forbids — the published contract type then *is* the row type.
+
+## For a scan gate, the mutation that proves it is the NAIVE implementation
+
+Extends the fixture/mutation notes above with the shape that applies to any
+"detects X in source" gate. An arbitrary code mutation proves the suite is
+wired up; it does not prove the gate is worth having. What does is mutating
+the implementation into the version a reasonable person would have written:
+
+  a text search for the package name   -> must redden the comment and the
+                                          string-literal tolerance cases
+  a per-line `import ... from` regex   -> must redden the multi-line-import
+                                          case (and the tolerance cases)
+
+Both were run here and both reddened exactly those cases. The first round of
+this grid also produced the trap worth recording: a mutation *intended* to
+model a grep matched quoted strings instead of the package name, so it happened
+to get the tolerance cases right and stayed **green** — reading as "the
+tolerance cases are vacuous" when the mutation was simply not naive. Write the
+mutation to be the implementation you are arguing against, then confirm it
+reddens the specific cases that argument predicts, by name.
+
+## `@stylistic/quotes: 'single'` allows a MULTI-LINE template literal
+
+Corrects the note above, which says the rule "rejects a template literal
+carrying no `${}`". That is true only for a **single-line** one. eslint's
+`quotes` rule exempts any template literal that is tagged, has a substitution,
+**or contains a line break**, so a multi-line fixture string in a test needs
+neither an interpolation nor an escape:
+
+    const FIXTURE = `                      // fine: multi-line, no ${}
+    import { Type } from '@sinclair/typebox';
+    `;
+    'src/x.ts': `import '${DB_PACKAGE_NAME}';\n`   // fine: single-line, has ${}
+    'src/y.ts': "import 'a';\n"                    // ERROR: double quotes
+
+The practical consequence for any suite whose fixtures are source code: write
+multi-line fixtures as bare backtick literals, and give single-line ones an
+interpolation rather than escaping the quotes inside them.
+
+## One more shell trap: `rm -rf` under /tmp is refused by the permission layer
+
+Adds to the shell-traps section above. A scratch-directory setup that starts
+`rm -rf /tmp/<fixed-name>` is denied outright and the whole compound command
+never runs. Use `mktemp -d` for a fresh path instead of clearing a fixed one —
+it needs no delete, and it also stops two runs from colliding.
