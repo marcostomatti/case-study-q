@@ -1,0 +1,120 @@
+# Diffed against ../base.yaml, this must report
+# `request-property-type-changed` and no other change id.
+#
+# The narrowed type: the spend-limit request body tightens `minorUnits` from
+# `number` to `integer`. Narrowing is only breaking in the REQUEST direction --
+# it shrinks what the provider accepts, so a consumer already sending 1000.50
+# starts getting rejected. The same narrowing applied to a response property is
+# not reported, which is why this fixture edits SpendLimitUpdate and not
+# SpendLimit.
+openapi: 3.0.3
+info:
+  title: Fixture - diff baseline
+  version: 1.0.0
+paths:
+  /companies/{companyId}/dashboard:
+    get:
+      operationId: getCompanyDashboard
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The dashboard payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+        '404':
+          description: No such company.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /companies/{companyId}/spend-limit:
+    put:
+      operationId: replaceSpendLimit
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpendLimitUpdate'
+      responses:
+        '200':
+          description: The stored spend limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpendLimit'
+        '404':
+          description: No such company.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    Dashboard:
+      type: object
+      additionalProperties: false
+      required: [card]
+      properties:
+        card:
+          $ref: '#/components/schemas/Card'
+    Card:
+      type: object
+      additionalProperties: false
+      required: [lastFour, state]
+      properties:
+        # Required, so removing it is breaking. Removing the optional
+        # cardArtRef below is not, which is what makes the pair worth having.
+        lastFour:
+          type: string
+        state:
+          $ref: '#/components/schemas/CardState'
+        cardArtRef:
+          type: string
+    CardState:
+      type: string
+      enum: [active, frozen, unknown]
+    SpendLimitUpdate:
+      type: object
+      additionalProperties: false
+      required: [minorUnits, currency]
+      properties:
+        # Deliberately wider than the repo's integer-minor-units convention:
+        # tightening it to `integer` is the narrowing the breaking fixture
+        # makes, and it is the kind of change that reads as a correction and
+        # rejects a consumer already sending 1000.50.
+        minorUnits:
+          type: integer
+        currency:
+          type: string
+    SpendLimit:
+      type: object
+      additionalProperties: false
+      required: [minorUnits, currency]
+      properties:
+        minorUnits:
+          type: integer
+        currency:
+          type: string

@@ -1,13 +1,26 @@
 /**
  * Public surface of `@marcos-corp/contract-tooling`.
  *
- * `lintSpec` is gate 2 of the four blocking gates in spec section 8. The
- * breaking-change diff (`diffSpecs`), the published-baseline resolver, the
- * OpenAPI emitter, the `@marcos-corp/db` dependency check, the exact-pin
- * check and the gate runner that composes them land in later tasks and are
- * re-exported here alongside it.
+ * `lintSpec` is gate 2 and `diffSpecs` is gate 3 of the four blocking gates
+ * in spec section 8. The published-baseline resolver that supplies
+ * `diffSpecs` with its base document, the OpenAPI emitter, the
+ * `@marcos-corp/db` dependency check, the exact-pin check and the gate runner
+ * that composes them land in later tasks and are re-exported here alongside
+ * them.
+ *
+ * `runBinary` is deliberately not exported: it is how this package starts a
+ * gate binary, not something a caller should reach for. Anything needing
+ * vacuum or oasdiff should go through the gate that wraps it.
  */
 
+export type {
+  BreakingChange,
+  BreakingChangeLevel,
+  ChangeLocation,
+  DiffOptions,
+  DiffResult,
+} from './diff';
+export { diffSpecs } from './diff';
 export type {
   LintFinding,
   LintOptions,

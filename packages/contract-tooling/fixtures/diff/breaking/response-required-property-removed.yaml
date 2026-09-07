@@ -1,0 +1,114 @@
+# Diffed against ../base.yaml, this must report
+# `response-required-property-removed` and no other change id.
+#
+# The removed field of spec section 9.2: `lastFour` leaves both the Card
+# schema and its `required` list, so every consumer reading the dashboard
+# loses a field it was promised. Nothing else in the document moves, which is
+# what keeps the reported id set a single element.
+openapi: 3.0.3
+info:
+  title: Fixture - diff baseline
+  version: 1.0.0
+paths:
+  /companies/{companyId}/dashboard:
+    get:
+      operationId: getCompanyDashboard
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The dashboard payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+        '404':
+          description: No such company.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /companies/{companyId}/spend-limit:
+    put:
+      operationId: replaceSpendLimit
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpendLimitUpdate'
+      responses:
+        '200':
+          description: The stored spend limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpendLimit'
+        '404':
+          description: No such company.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    Dashboard:
+      type: object
+      additionalProperties: false
+      required: [card]
+      properties:
+        card:
+          $ref: '#/components/schemas/Card'
+    Card:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state:
+          $ref: '#/components/schemas/CardState'
+        cardArtRef:
+          type: string
+    CardState:
+      type: string
+      enum: [active, frozen, unknown]
+    SpendLimitUpdate:
+      type: object
+      additionalProperties: false
+      required: [minorUnits, currency]
+      properties:
+        # Deliberately wider than the repo's integer-minor-units convention:
+        # tightening it to `integer` is the narrowing the breaking fixture
+        # makes, and it is the kind of change that reads as a correction and
+        # rejects a consumer already sending 1000.50.
+        minorUnits:
+          type: number
+        currency:
+          type: string
+    SpendLimit:
+      type: object
+      additionalProperties: false
+      required: [minorUnits, currency]
+      properties:
+        minorUnits:
+          type: integer
+        currency:
+          type: string

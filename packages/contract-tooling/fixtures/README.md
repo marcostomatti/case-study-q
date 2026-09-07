@@ -1,5 +1,8 @@
 # House ruleset fixtures
 
+> The `diff/` subdirectory belongs to a different gate and has its own
+> [README](diff/README.md). Everything below is about the house ruleset.
+
 Test data for `../rulesets/house.spectral.yaml`. A ruleset that loads and
 reports nothing looks exactly like a correct one, so every rule in that file is
 paired here with a document that must fail on it and on no other rule, and the

@@ -30,9 +30,12 @@
  * and exit 2 means "the gate could not run" — a gate that cannot run must
  * never be mistaken for a gate that passed.
  */
-import { spawn } from 'node:child_process';
+import type { BinaryRun } from './runBinary';
+
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+
+import { runBinary } from './runBinary';
 
 /**
  * The house ruleset, resolved relative to this module so a caller in any
@@ -101,52 +104,15 @@ export interface LintOptions {
   vacuumBin?: string;
 }
 
-interface VacuumRun {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
+type VacuumRun = BinaryRun;
 
 /**
- * Runs vacuum and collects both streams. Resolves for any exit code — the
- * caller decides which ones mean what — and rejects only when the process
- * could not be started at all.
+ * Runs vacuum through the shared gate-binary wrapper. The gate label and the
+ * override variable are what turn a missing binary into a message naming this
+ * gate and this prerequisite rather than a bare ENOENT.
  */
 function runVacuum(bin: string, args: readonly string[]): Promise<VacuumRun> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(bin, [...args]);
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk: string) => {
-      stderr += chunk;
-    });
-
-    child.on('error', (cause: Error & { code?: string }) => {
-      if (cause.code === 'ENOENT') {
-        reject(new Error(
-          `lint gate cannot run: could not execute '${bin}'. vacuum is a documented `
-          + 'prerequisite (see .plans/PREREQUISITES-01-bare-minimal-api-governance-poc.md); '
-          + 'install it on PATH, or point $VACUUM_BIN at it.',
-          { cause },
-        ));
-        return;
-      }
-      reject(cause);
-    });
-    child.on('close', (code) => {
-      resolve({ code: code ?? -1, stdout, stderr });
-    });
-
-    // vacuum only reads stdin under `-i`, but a pipe left open is a way to
-    // hang on a future version that probes it.
-    child.stdin.end();
-  });
+  return runBinary(bin, args, { gate: 'lint', envVar: 'VACUUM_BIN' });
 }
 
 /** Prefers vacuum's plain stderr line over its ANSI-coloured stdout banner. */

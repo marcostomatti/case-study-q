@@ -155,7 +155,7 @@ and a single Go binary.
 
 - [x] Add `packages/contract-tooling/rulesets/house.spectral.yaml` carrying all six house rules from spec §8 — reject typeless or empty `{}` schemas, require `additionalProperties` explicitly on every object, require every enum to include an `unknown` member, require an `x-sunset` date on anything marked `deprecated`, require `operationId` on every operation with every error response referencing the shared error schema, and reject `"nullable": true` along with any `type` array containing `"null"` — each rule carrying a description naming the failure it prevents
 - [x] Add `packages/contract-tooling/fixtures/` containing one minimal OpenAPI document per house rule that violates exactly that rule and no other, plus one document satisfying every rule
-- [ ] Add `packages/contract-tooling/src/lint.ts` exporting `lintSpec(specPath: string): Promise<LintResult>` that shells out to `vacuum lint --ruleset` and parses its JSON output into `{ ok: boolean; errors: LintFinding[] }`, with colocated unit tests asserting each fixture in `fixtures/` fails on its own rule and the satisfying document passes
+- [x] Add `packages/contract-tooling/src/lint.ts` exporting `lintSpec(specPath: string): Promise<LintResult>` that shells out to `vacuum lint --ruleset` and parses its JSON output into `{ ok: boolean; errors: LintFinding[] }`, with colocated unit tests asserting each fixture in `fixtures/` fails on its own rule and the satisfying document passes
 
 A rule that never fires is worse than no rule, because it reads as coverage. The
 fixture-per-rule pairing above is what stops that: each fixture must fail on its

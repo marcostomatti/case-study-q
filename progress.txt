@@ -656,6 +656,15 @@ it from the code point instead, which sidesteps both:
 
 Skill: `ascii-source-unicode-via-codepoints`.
 
+## Both gate binaries are started through `src/runBinary.ts` -- add the third there
+
+`packages/contract-tooling/src/runBinary.ts` is the single place this repo
+spawns a gate binary. It captures both streams, resolves for every exit code
+(the caller decides what each one means) and rejects only on ENOENT, with a
+message naming the gate, the prerequisites file and the `$<X>_BIN` override.
+`lint.ts` and `diff.ts` both go through it. Anything shelling out to a fourth
+tool should too rather than growing a third copy of the same 45 lines.
+
 ## `lintSpec` is the first gate to land; reuse it rather than re-shelling out
 
 `packages/contract-tooling/src/lint.ts` exports `lintSpec(specPath, options?)`
@@ -670,3 +679,126 @@ values as they land; add to it in the same task that adds the module.
 it, so a rule added at `warn` is reported without blocking. Assert against
 `errors` for gate behaviour and `findings` when the claim is "vacuum said
 nothing at all".
+
+
+## `diffSpecs` is gate 3; the same "exit code says nothing" trap as vacuum
+
+`packages/contract-tooling/src/diff.ts` exports
+`diffSpecs(basePath, revisionPath, options?)` returning
+`{ breaking, changes }`. `gates.ts`, `scripts/pipeline-simulation.ts` and
+acceptance script 02 should call it rather than spawning oasdiff themselves.
+`breaking` is `changes.length > 0`: `oasdiff breaking` reports breaking
+changes and nothing else, and the warning-level ones ("breaking for some
+clients", e.g. `request-parameter-removed`) block too.
+
+Measured on oasdiff 1.31.0, each one a wrapper that silently never fails if
+ignored:
+
+- `oasdiff breaking` exits **0 whether or not it found breaking changes**
+  unless `--fail-on ERR|WARN` is passed. Derive pass/fail from the parsed
+  report, which also leaves the exit code free to mean only "could not run".
+- `-f json` writes a bare array to stdout with no banner. Fields: `id` (the
+  check id), `text`, optional `comment`, `level` (**3 error, 2 warning, 1
+  info**), `operation`, `operationId`, `path`, `section`, and `baseSource` /
+  `revisionSource` objects of `{file, line, column}` -- both optional, and a
+  pure addition or removal only populates one of them.
+- `--color` is **rejected outright** under `-f json`: exit **100**,
+  `Error: --color flag is only relevant with 'text' or 'singleline' formats`.
+  A third exit code beyond 0 and the 102 below.
+- A load failure on either side -- missing file or unparseable document --
+  exits **102** and writes a plain (no ANSI) `Error: failed to load base spec
+  from "<path>"` / `failed to load revision spec from "<path>"` to stderr.
+  Same exit for both causes, so pre-check the paths yourself if "which side"
+  needs to be reported without parsing oasdiff's wording.
+- `oasdiff checks changelog -f json` lists all 681 checks with their levels.
+  It is the way to confirm a check id exists before naming a fixture after it.
+
+## Two asymmetries in what oasdiff calls breaking, both easy to get backwards
+
+These are governance facts, not tooling trivia: they decide what
+`docs/breaking-changes.md` can claim, what acceptance script 02 has to remove
+to be blocked, and which direction a contract change is safe in.
+
+- **Removing an OPTIONAL response property is not breaking.** Only a required
+  one is (`response-required-property-removed`). "The diff gate catches
+  removals" is false as stated. An acceptance script that removes an optional
+  field will exit 0 and prove nothing.
+- **Narrowing is breaking in the REQUEST direction only.** Tightening a
+  response property from `number` to `integer` reports nothing -- the provider
+  promises less variety, which no consumer can be hurt by. The same edit on a
+  request property is an error (`request-property-type-changed`), because it
+  shrinks what the provider accepts and rejects a consumer already sending
+  `1000.50`.
+
+A third one worth knowing before writing `gates.ts`: a document that is valid
+YAML but is **not** an OpenAPI description parses without complaint and is
+reported as every path removed -- maximally breaking rather than silently
+clean. That fails in the safe direction, but nothing in the diff gate can tell
+it from a real mass removal. Gate order in spec section 8 (emit, then lint,
+then diff) is what covers it.
+
+## `test:all` now requires oasdiff on PATH as well as vacuum
+
+Extends the vacuum note above. `packages/contract-tooling/src/diff.test.ts`
+shells out to the real `oasdiff`, for the same reason the lint suite shells out
+to the real vacuum: a stub would prove the suite parses its own fixtures, not
+that oasdiff classifies these edits the way the two asymmetries above claim.
+
+- The CI job running `test:all` must install **both** pinned binaries, not
+  only the `contracts` job.
+- `$OASDIFF_BIN` overrides the binary (verified with a negative control), and
+  the `beforeAll` shape means an unprovisioned machine reports one pointed
+  error plus 19 skips rather than 19 lookalike failures.
+- Local probe install, since oasdiff ships no npm package worth using:
+  `curl -sSL -o /tmp/o.tgz https://github.com/oasdiff/oasdiff/releases/download/v1.31.0/oasdiff_1.31.0_darwin_all.tar.gz`
+  then `tar -xzf /tmp/o.tgz -C /tmp/oasdiff-probe`. Linux assets are on the
+  same release; pin the version CI installs.
+
+## `import type` sorts into its own group, and it goes FIRST
+
+`sharedRules.mjs` sets `import/order` groups to
+`['type', 'builtin', 'external', 'internal', 'parent', 'sibling', 'index']`
+with `newlines-between: 'always'`. So a type-only import sorts **above**
+`node:fs`, separated by a blank line, which looks wrong and is what the rule
+wants:
+
+    import type { BinaryRun } from './runBinary';
+
+    import { existsSync } from 'node:fs';
+
+    import { runBinary } from './runBinary';
+
+Worth knowing before the first `import type` in a package: it is a lint error
+rather than a style opinion, and the fix is counter-intuitive enough to cost a
+red run each time it is rediscovered.
+
+## Fixture directories under `packages/contract-tooling/fixtures/` are per gate
+
+`fixtures/valid/` and `fixtures/violations/` belong to the lint gate;
+`fixtures/diff/` (a `base.yaml` plus `breaking/` and `not-breaking/`
+revisions) belongs to the diff gate. Two conventions are shared across both
+and are worth keeping for any gate fixtures that land later:
+
+- **The expected code is the filename up to its first `.`**, so a suite
+  derives its expectations instead of carrying a table that drifts.
+- **Each directory carries its own README** stating what a file there must do
+  when the gate runs. `fixtures/README.md` is the lint one and points at
+  `fixtures/diff/README.md`; both are linted, because `eslint.base.mjs`
+  declares a `**/*.md` block.
+
+`fixtures/diff/base.yaml` and every revision under it also satisfy the house
+ruleset, so the gate-runner integration test can reach the diff gate: a
+baseline that failed lint would stop a composed run before diff, and the diff
+gate would then read as passing.
+
+## A pair-based fixture suite needs a "the revision actually differs" guard
+
+The diff analogue of the empty-file mutation trap above, and it is silent in
+the same way. A `not-breaking/` fixture identical to its baseline reports
+nothing, passes its own assertion, and proves nothing about the gate. One
+line closes it, asserted for every fixture in both directories:
+
+    expect(readFileSync(fixture, 'utf8')).not.toEqual(readFileSync(base, 'utf8'));
+
+Verified by mutation: copying `base.yaml` over a not-breaking fixture reddens
+exactly that case and nothing else.
