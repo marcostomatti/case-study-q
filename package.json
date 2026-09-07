@@ -1,0 +1,45 @@
+{
+  "name": "marcos-corp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Marcos Tomatti <marcostomatti.cv@gmail.com>",
+  "packageManager": "bun@1.3.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "overrides": {
+    "zod": "4.5.1"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:all": "bun run lint && bun run --filter '@ar/*' lint",
+    "check-types": "tsc --noEmit",
+    "check-types:all": "bun run check-types && bun run --filter '@ar/*' check-types",
+    "test": "vitest run",
+    "test:all": "bun run test && bun run --filter '@ar/*' test",
+    "gate:control-bytes": "bun tools/control-byte-gate/control-byte-gate.ts",
+    "ralph": "bun tools/ralph/ralph.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@eslint/markdown": "^8.0.3",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@types/bun": "^1.4.0",
+    "@types/node": "^26.4.1",
+    "@typescript-eslint/parser": "^8.69.0",
+    "eslint": "^9.39.4",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jsonc": "^3.4.2",
+    "globals": "^17.12.0",
+    "jsonc-eslint-parser": "^3.1.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^4.1.7"
+  }
+}

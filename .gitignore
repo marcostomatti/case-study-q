@@ -4,3 +4,6 @@ dist/
 build/
 
 .env
+# Live git worktrees belonging to another repo were found here; never
+# stage them (git records them as dangling gitlinks in this public repo).
+.claude/worktrees/

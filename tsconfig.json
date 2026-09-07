@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Umbrella root (tools + root files)",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["tools", "*.ts", "*.mjs"],
+  // *.test.ts is excluded from check-types (origin parity with the service
+  // template — vitest executes them; tsc doesn't gate them). Burning this
+  // down is tracked in .specs/test-type-checking.md.
+  "exclude": ["node_modules", "packages", "**/*.test.ts"]
+}

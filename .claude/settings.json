@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bunx tsc:*)",
+      "Bash(bun run check-types:*)",
+      "Bash(bun run lint:*)",
+      "Bash(bun run test:*)",
+      "Bash(bun run check:stories:*)",
+      "Bash(bun run build:*)",
+      "Bash(node packages/ui/scripts/compare-design.mjs:*)",
+      "Bash(node packages/ui/scripts/check-stories.mjs:*)",
+      "Bash(node scripts/compare-design.mjs:*)",
+      "Bash(node scripts/check-stories.mjs:*)"
+    ]
+  }
+}
