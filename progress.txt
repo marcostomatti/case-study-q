@@ -390,3 +390,40 @@ opens it -- a dead link is green. Cheap check, run from the repo root:
 
 Pair it with a deliberately misspelled target in the same run, or a checker
 that reports OK for everything is indistinguishable from one that works.
+
+## Docs that describe not-yet-built code: bound the staleness, don't scatter it
+
+Every remaining `docs/*` task writes prose about gates, scripts and workflows
+that land in later stages. Two rules keep those docs from being silently
+falsified by the commit that builds the thing they describe:
+
+- **Reference a file that does not exist yet in backticks, never as a markdown
+  link.** `docs/ci.md` in backticks is a forward pointer; `[x](ci.md)` is a dead
+  link that the four-gate order will never catch (nothing in lint, check-types,
+  test or the byte gate opens a link target).
+- **Confine "not true yet" claims to one clearly-titled section, and phrase each
+  so it is still true at the end of the plan.** "The CODEOWNERS handles are
+  placeholders" and "the 13-month retention is a requirement this PoC does not
+  satisfy" survive every later stage. "These gates do not exist yet" does not,
+  and goes stale in a file nobody re-reads. See `stale-prose-sweep-on-commit`.
+
+## Where the governance facts live, so docs tasks stop re-deriving them
+
+`docs/governance.md` is now the single place the spec §10 decisions are recorded
+as resolved (TypeBox + ts-rest in contract packages, Zod everywhere internal but
+never in `packages/contracts-*`, `client_id` issued manually with a named owner,
+contract packages versioned independently). Later docs, README sections and
+package `AGENTS.md` files should link to it rather than restating the rationale.
+
+The spec sections each doc task draws from, since they are not adjacent in the
+file: §4 tier-to-gate table, §7 out-of-scope triggers, §8 gate order + house
+rules, §9 acceptance criteria, §10 open decisions. `PRESENTATION.md` lines 18-56
+hold the original tier definitions that §4 restates.
+
+## Checking a markdown table before lint does: count cells per row
+
+`markdown/table-column-count` fires on a row whose cell count differs from the
+header, and a hand-aligned table is easy to get wrong mid-edit. Cheaper than
+reading it: strip the leading/trailing pipe, split on `|`, and assert one
+distinct count per contiguous table block. Run it together with the h1-count and
+duplicate-heading checks — all three are pure text and need no tooling.
