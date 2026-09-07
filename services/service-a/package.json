@@ -1,0 +1,31 @@
+{
+  "name": "@marcos-corp/service-a",
+  "version": "0.1.0",
+  "description": "Provider service for cards and transactions. Serves the @marcos-corp/contracts-service-a contract over Express through ts-rest, and owns the mapping layer that keeps @marcos-corp/db out of the contract.",
+  "private": true,
+  "type": "module",
+  "author": "Marcos Tomatti <marcostomatti.cv@gmail.com>",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "lint": "eslint .",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@ts-rest/core": "^3.52.1",
+    "@ts-rest/express": "^3.52.1",
+    "express": "^4.22.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.25"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

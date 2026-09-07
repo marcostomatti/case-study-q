@@ -162,3 +162,53 @@ name / display / description lines; anything else in the diff is an unintended
 delta. This is stronger than re-reading each file, and it catches the reverse
 failure too — a template-specific line copied where it does not belong (see the
 drizzle-exclude note above).
+
+## The root eslint ignores block is now closed over all three workspace globs
+
+Confirmed by measurement, not assumption: with `services/` present and only
+`packages/**` ignored, root `eslint .` read 32 files including all five
+service leaf files; after adding `'apps/**'` and `'services/**'` it read 27 and
+none under apps/ or services/. The root `eslint.config.mjs` ignores block now
+lists all three globs declared in `package.json` workspaces, so no later
+`apps/*` or `services/*` package has to touch it again. Root `tsconfig.json`
+never needed the same fix — its `include` is `["tools", "*.ts", "*.mjs"]`, so
+leaf packages were already outside it.
+
+## ts-rest v3 pins Express 4, and its express peer is NOT optional
+
+`@ts-rest/express@3.52.1` (the `latest` tag; 3.53.x is alpha/rc only) declares
+`peerDependencies: { "@ts-rest/core": "~3.52.0", "express": "^4.0.0", "zod":
+"^3.22.3" }` with **only zod** marked optional. Express 5.2.1 is `latest` on npm
+and does not satisfy `^4.0.0`. Any service in this repo therefore takes
+`express@^4.22.2` with `@types/express@^4.17.25`, and must also declare
+`@ts-rest/core` itself — a non-optional peer does not get resolved for you under
+bun's isolated linker. `bun install` printed no peer warnings with that set,
+which is the check worth reading.
+
+`@types/express` belongs in the **leaf** devDependencies, not the root: it is
+package-specific typing rather than shared tooling, and the isolated linker
+requires it to resolve from the package directory. That is the exception to the
+"tooling devDeps stay at the root" note above — the rule is about *shared*
+tooling, not about the `devDependencies` field.
+
+Unrelated aside worth knowing: `@ts-rest/express`'s .d.ts references
+`z.ZodObject` even though zod is not installed. `skipLibCheck: true` in
+`tsconfig.base.json` is what keeps that from failing `check-types`.
+
+## Proving a `dev` script, which by design never exits
+
+`bun --watch <entry>` stays resident, so `bun run dev; echo $?` hangs rather
+than reporting. Two cheap readings instead:
+  bun src/index.ts                          -> entrypoint executes, exit 0
+  bun run dev (backgrounded) + pgrep -fl    -> the script resolves and the
+                                               watcher is actually running
+then `pkill -f 'bun --watch src/index.ts'`. The backgrounded job reports exit
+143 (SIGTERM) afterwards; that is the kill, not a failure.
+
+## A service leaf carries a `dev` script; the entrypoint is src/index.ts
+
+`src/index.ts` is already the package's `exports`/`main`/`types`, so pointing
+`dev` at it keeps one entrypoint and makes the script runnable from the day the
+package is created rather than pointing at a `server.ts` that lands tasks later.
+When `server.ts` arrives, wire it in through `src/index.ts` instead of
+repointing the script.

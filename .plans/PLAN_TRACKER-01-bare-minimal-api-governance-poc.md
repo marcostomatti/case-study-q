@@ -119,7 +119,7 @@ extending `../../eslint.base.mjs` and a leaf `tsconfig.json` extending
 - [x] Create `packages/db` as a bun workspace package named `@marcos-corp/db` with `package.json`, a leaf `tsconfig.json` extending `../../tsconfig.base.json`, a leaf `eslint.config.mjs` extending `../../eslint.base.mjs`, and `lint`/`check-types`/`test` scripts, exporting an empty `src/index.ts` placeholder
 - [x] Create `packages/contract-tooling` as a bun workspace package named `@marcos-corp/contract-tooling` with the same four config files and script names as `@marcos-corp/db`
 - [x] Create `packages/contracts-service-a` as a bun workspace package named `@marcos-corp/contracts-service-a` at version `0.1.0`, with the same four config files and script names, and add `@sinclair/typebox` and `@ts-rest/core` as dependencies
-- [ ] Create `packages/contracts-service-b` as a bun workspace package named `@marcos-corp/contracts-service-b` at version `0.1.0`, mirroring the `contracts-service-a` package configuration
+- [x] Create `packages/contracts-service-b` as a bun workspace package named `@marcos-corp/contracts-service-b` at version `0.1.0`, mirroring the `contracts-service-a` package configuration
 - [ ] Create `services/service-a` as a bun workspace package named `@marcos-corp/service-a` with the same four config files, an Express dependency, `@ts-rest/express`, and a `dev` script
 - [ ] Create `services/service-b` as a bun workspace package named `@marcos-corp/service-b`, mirroring the `service-a` package configuration
 - [ ] Create `apps/web-a` and `apps/web-b` as bun workspace packages named `@marcos-corp/web-a` and `@marcos-corp/web-b`, each a plain TypeScript consumer with no framework dependency, each carrying the same four config files
