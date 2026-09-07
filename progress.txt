@@ -1697,3 +1697,147 @@ negative controls (a double-quoted string reddened lint; an invalid `dialect`
 literal reddened `check-types` with TS2322 naming the six legal dialects). That
 last one is worth knowing: drizzle-kit's config types are strict enough that a
 typo'd dialect or option is a `check-types` failure rather than a runtime one.
+
+## `pg` is the driver, and its version is NOT in lockstep with `@types/pg`
+
+`packages/db` opens its first connection with `drizzle-orm/node-postgres` plus
+`pg`, which is the combination `.claude/skills/drizzle-orm/rules/` documents.
+Any later task that connects — `service-a`'s repositories, the integration
+suites, `scripts/demo.ts` — should use the same pair rather than reaching for
+`postgres`/postgres.js or `bun:sql`, both of which drizzle also supports and
+neither of which the repo's own skill covers.
+
+- `pg` is a **runtime `dependencies`** entry of the package that connects;
+  `@types/pg` is a **leaf `devDependencies`** entry, the same exception as
+  `@types/express` (the "tooling devDeps stay at the root" note is about
+  *shared* tooling).
+- The two versions are published independently: `pg` latest is **8.23.0** while
+  `@types/pg` latest is **8.23.1**, so `bun add pg@^8.23.1` fails with
+  `No version matching "^8.23.1" found for specifier "pg" (but package
+  exists)`. Read `npm view <pkg> dist-tags` rather than assuming the types
+  version is installable for the runtime package.
+- drizzle's `pg` peer is `>=8` and optional, and unlike `@ts-rest/core`'s
+  optional zod peer it means it: `drizzle-orm/pg-core` still needs no driver.
+
+## `pg` reports a refused connection as an `AggregateError` with an EMPTY message
+
+The idiom this repo already uses in several places —
+
+    const message = err instanceof Error ? err.message : String(err);
+
+— prints **nothing** for the single likeliest failure of any script that
+connects to Postgres. `pg` raises an `AggregateError` (one sub-error per
+resolved address) whose own `message` is `''`, and `AggregateError` passes
+`instanceof Error`, so the operator gets `FAIL — ` and no cause. Measured
+against a closed port; the sub-errors carry the `connect ECONNREFUSED
+::1:<port>` text.
+
+Any catch that renders an error for a human in a package that talks to a
+database needs the recursive form instead:
+
+    if (err instanceof AggregateError && err.errors.length > 0) {
+      return err.errors.map(describeError).join('; ');
+    }
+    if (err instanceof Error) { return err.message || err.name; }
+
+The `|| err.name` half matters on its own — an `Error` with an empty message is
+not only an `AggregateError` thing. Bad credentials and a missing table both
+report fine through `err.message`, so a probe that only tests those two reads
+as proving the handler works.
+
+## The seed's shape, and why it is NOT exported from `packages/db/src/index.ts`
+
+`packages/db/src/seed.ts` exports `seedDatabase(db, options?)`,
+`buildSeedRows(options?)` (pure, no database), `SEED_FIGURES` and the fixed
+`SEED_COMPANY_ID` / `SEED_CARD_ID` / `SEED_DUE_INVOICE_ID` /
+`SEED_PAID_INVOICE_ID`. The integration suite, `service-a`'s mapper tests,
+acceptance script 04 and `scripts/demo.ts` should import these rather than
+re-deriving the demo's numbers.
+
+- **It is reachable as `@marcos-corp/db/seed`, a second `exports` subpath, and
+  deliberately not re-exported from `src/index.ts`.** That file is the `schema`
+  entry of `drizzle.config.ts` and drizzle-kit *executes* it for its exports, so
+  re-exporting a module that imports a driver would put `pg` on the path of
+  `bun run db:generate` — a command that contacts no database by design. Adding
+  the subpath left `db:generate` printing `No schema changes, nothing to
+  migrate`, which is the control worth re-running after any new `src/*.ts`.
+- `seedDatabase` takes a `NodePgDatabase` rather than opening its own
+  connection, so a test injects a throwaway handle; only the CLI branch builds a
+  `Pool`. The CLI is guarded with
+  `fileURLToPath(import.meta.url) === process.argv[1]` (skill:
+  `esm-dual-purpose-cli-module`) and wired to `bun run db:seed`.
+- Everything happens in one `db.transaction`, and the deletes are scoped to
+  `SEED_COMPANY_ID` and ordered child-first — verified against a real cluster: a
+  failure on the last insert leaves 0 rows in all five tables, three
+  consecutive runs leave exactly one copy, and a second planted company's rows
+  survive untouched.
+
+## The seed is deliberately non-uniform, and the mapping tasks will be graded on it
+
+Load-bearing for `services/service-a`'s `dashboardMapper` and for `service-b`'s
+due-invoice lookup. A seed where every transaction is settled and inside the
+spend window would let a mapper that drops either filter compute the right
+answer, so the 57 rows are split 47 settled-in-window / 4 unsettled-in-window /
+6 settled-before-window, one of the 47 is a **negative** amount, and the newest
+row of all is `authorised` rather than `settled` — it belongs in the three the
+screen lists but not in the spend the meter subtracts.
+
+The wrong answers are all distinct from the correct `540000`, which is what
+makes a test able to tell them apart:
+
+    correct (state + window filters)   540000
+    no settlement-state filter         447700
+    no spend-window filter             300000
+    Math.abs() on the amounts          510000
+
+Same argument for the invoice banner: a second, already-`paid` invoice is due
+**earlier** than the issued one, so a lookup written `ORDER BY due_on LIMIT 1`
+without `payment_state = 'issued'` returns the wrong row rather than being
+accidentally right. There is still exactly one *due* invoice.
+
+## A module-level consistency guard ABSORBS fixture mutations — aim the grid elsewhere
+
+Extends the mutation-grid notes above with a shape that will recur wherever a
+module asserts its own invariants at build time. `buildSeedRows` throws on an
+inconsistent fixture, and the colocated suite builds its rows at module scope,
+so any mutation to the fixture table makes the whole test file fail to load —
+every case *vanishes* rather than going red, which is the "9 cases disappeared"
+reading recorded above.
+
+That is not a reason to drop either layer; it means they need separate grids:
+
+- **Mutate the fixture to prove the guard.** Nine legs here (an amount, a row
+  count, the window width, the newest-row offset, the before-window spacing, an
+  invoice state, and three `SEED_FIGURES` entries) each threw a *distinct*
+  message. Read the thrown text, not the exit code — a `grep` for the guard's
+  wording matches the source line in the stack trace and reports every leg as
+  firing the same guard.
+- **Mutate what the guard does not cover to prove the suite.** Currency, card
+  lifecycle state, the activation instant, the legal/display name split, the
+  invoice due dates and the sub-second truncation are outside the guard, and
+  eight legs there reddened exactly their predicted cases by name with the
+  total holding at 24.
+
+Order the guard's own assertions so the most fundamental run first: placement
+before the sums it feeds, or a row on the wrong side of a window reports as
+"expected 460000 settled, built 412300" and sends the reader hunting a typo in
+an amount.
+
+## A throwaway Postgres for this repo: homebrew `postgresql@14`, migrations applied verbatim
+
+`/opt/homebrew/opt/postgresql@14/bin` is present on this machine and stands a
+cluster in ~2s, so a database-backed claim needs neither docker nor the compose
+stack (skill: `throwaway-postgres-probe-cluster`). Drizzle's generated SQL
+applies **verbatim** with `psql -f` — its `--> statement-breakpoint` separators
+are plain SQL comments — so the artifact under test is the artifact that ships.
+
+Count what landed rather than trusting a silent run; the initial migration
+gives `6 CREATE TABLE, 4 CREATE TYPE, 5 ALTER TABLE, 4 CREATE INDEX`:
+
+    psql ... -f drizzle/0000_*.sql | grep -E 'CREATE|ALTER|ERROR' | sort | uniq -c
+
+Two things worth pairing with any such probe, both of which caught nothing here
+only because they were run: a **positive control** after an expected refusal
+(drop the constraint, confirm the same database now seeds clean — otherwise
+"0 rows everywhere" is indistinguishable from a seed that never worked), and a
+**second, unrelated company** planted before a scoped-delete claim.

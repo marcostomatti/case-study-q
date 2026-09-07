@@ -7,7 +7,8 @@
   "author": "Marcos Tomatti <marcostomatti.cv@gmail.com>",
   "license": "Apache-2.0",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./seed": "./src/seed.ts"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -15,15 +16,18 @@
     "lint": "eslint .",
     "check-types": "tsc --noEmit",
     "test": "vitest run",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:seed": "bun src/seed.ts"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.23.0"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
+    "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.10"
   }
 }
