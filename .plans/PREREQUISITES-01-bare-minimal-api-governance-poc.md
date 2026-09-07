@@ -22,6 +22,22 @@ Pin the same versions locally that `.github/workflows/ci.yml` installs. A local
 `vacuum` newer than CI's reports rule violations CI does not, which reads as a
 flaky gate.
 
+## Postgres, for `bun run test`
+
+`packages/db` carries an integration suite that migrates, seeds and reads the
+mobile view's figures back out of a real server, so `bun run test` there — and
+therefore `bun run test:all` — needs one. Either route satisfies it:
+
+- [ ] `initdb` and `pg_ctl` reachable, from which the suite stands up a private
+      cluster on a unix socket and throws it away afterwards. `$PATH`,
+      `/opt/homebrew/opt/postgresql@*`, `/usr/local/opt/postgresql@*` and
+      `/usr/lib/postgresql/*` are searched; `PG_BIN_DIR` reaches anywhere else.
+- [ ] `TEST_DATABASE_URL` set to a server the suite may create a database on,
+      which is the route CI and `docker/compose.yaml` take. It takes precedence
+      over the cluster above.
+
+Neither available is one pointed error and skipped cases, never a green run.
+
 ## Environment variables
 
 Local-only defaults are committed in `docker/compose.yaml`. Override only if a
@@ -31,6 +47,11 @@ port or credential collides.
   the seed, and `service-a`.
 - `SERVICE_A_PORT`, `MOCK_SERVICE_A_PORT`, `POSTGRES_PORT` — override the
   defaults above when a port is taken.
+- `TEST_DATABASE_URL` — a Postgres `packages/db`'s integration suite may create
+  and drop a uniquely named throwaway database on. It is never migrated or
+  seeded into directly, so it is safe to point at a development server.
+- `PG_BIN_DIR` — the directory holding `initdb` and `pg_ctl`, when Postgres is
+  installed somewhere the search above does not reach.
 
 Docker Compose gives shell environment precedence over `--env-file`. A variable
 exported in the demo shell silently overrides the committed default; confirm the

@@ -189,7 +189,7 @@ column rename can be shown to be a non-breaking change.
 - [x] Add `packages/db/src/schema/invoices.ts` defining a Drizzle `invoices` table with an id, a company foreign key, a due date, an integer minor-unit amount, a currency code and a payment state
 - [x] Add `packages/db/src/schema/apiUsage.ts` defining a Drizzle `api_usage` table recording an occurrence timestamp, a `client_id`, the operation id, the contract version, the response status and the consuming package name, indexed on `client_id` and on the occurrence timestamp
 - [x] Add `packages/db/drizzle.config.ts` and generate the initial SQL migration into `packages/db/drizzle/` with `drizzle-kit generate`, following `.claude/skills/drizzle-orm/rules/making-changes-to-database.md`
-- [ ] Add `packages/db/src/seed.ts` seeding one company named `Company AB`, one card, a spend limit of `1000000` minor units, transactions summing to `460000` minor units spent so that remaining spend reads `540000` of `1000000`, a total of `57` transactions so that three shown leaves `54 more items`, and one due invoice
+- [x] Add `packages/db/src/seed.ts` seeding one company named `Company AB`, one card, a spend limit of `1000000` minor units, transactions summing to `460000` minor units spent so that remaining spend reads `540000` of `1000000`, a total of `57` transactions so that three shown leaves `54 more items`, and one due invoice
 - [ ] Add a `packages/db` integration test that applies the migrations to a throwaway Postgres database, runs the seed, and asserts the seeded remaining-spend and transaction-count figures match the values rendered in `assets/mobile-view.png`
 
 The seed numbers are load-bearing for the demo. `5 400/10 000 kr` and

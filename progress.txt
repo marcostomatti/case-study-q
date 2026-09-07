@@ -1841,3 +1841,119 @@ only because they were run: a **positive control** after an expected refusal
 (drop the constraint, confirm the same database now seeds clean — otherwise
 "0 rows everywhere" is indistinguishable from a seed that never worked), and a
 **second, unrelated company** planted before a scoped-delete claim.
+
+## `startThrowawayPostgres` is where a database-backed suite gets its server
+
+`packages/db/src/testing/throwawayDatabase.ts` exports
+`startThrowawayPostgres()`, `MIGRATIONS_DIR` and
+`THROWAWAY_POSTGRES_TIMEOUT_MS`. Every later suite that needs a real Postgres —
+`services/service-a`'s repository and integration tests, `service-b`'s
+due-invoice test, acceptance script 04 — should call it rather than reaching for
+docker or a hand-rolled connection.
+
+- **Two routes, `TEST_DATABASE_URL` first.** A supplied server wins so a
+  deliberately provisioned one is never quietly ignored; otherwise the module
+  runs `initdb` into a scratch dir and starts it **on a unix socket with
+  `listen_addresses = ''`**, which is why it cannot collide with a Postgres
+  already holding 5432. Both routes then hand back a *freshly created,
+  uniquely named* database and drop it in `stop()`. Migrating into the URL's
+  own database directly is the mistake the create/drop exists to prevent.
+- **`stop()` drops every database the handle created**, so a failed run leaks
+  nothing onto a shared server. Verified against a real one: `pg_database`
+  held no `qred_%` row afterwards.
+- Neither route available is one pointed error plus skipped cases, never a
+  green run — same shape as the vacuum/oasdiff suites. `PG_BIN_DIR` is the
+  escape hatch, and both halves were proven (roots emptied + no Postgres on
+  PATH -> the pointed error; same run with `PG_BIN_DIR` set -> 14 green).
+- Startup is ~640 ms with `--no-sync` and `fsync = off`, so a per-file server
+  is cheap enough not to bother sharing one.
+
+## Pass `pg` a unix-socket directory as `host`, and watch `sun_path`
+
+`new Pool({ host: '/tmp/qred-pg-abc123', user, database })` connects over the
+socket — no port, no password, no TCP. Two things to know before copying it:
+
+- The socket path is capped by `sun_path`: **104 bytes on macOS**, 108 on
+  Linux, and exceeding it reports neither the socket nor the limit. macOS's
+  `TMPDIR` is a ~48-character private path, so `tmpdir()` + a scratch dir +
+  `/.s.PGSQL.5432` lands at 77 — inside the budget, but not by enough to
+  assume. `throwawayDatabase.ts` measures it and falls back to `/tmp`.
+- `listen_addresses = ''` belongs in `postgresql.conf`, **not** in
+  `pg_ctl -o`. `pg_ctl` hands that string to a shell, so the empty quotes have
+  to survive a quoting round trip the config file does not have.
+
+## An uncast `SUM()` comes back as a STRING, and a naive assertion hides it
+
+Postgres widens `SUM(integer)` to `bigint`, and `pg` renders `bigint` as a
+JavaScript **string** because it can exceed the safe integer range. So a
+remaining-spend query returns `"540000"`, and `expect(x).toBe(540_000)` fails
+for a reason that reads as a wrong figure rather than a wrong type. Cast the
+aggregate — `(... - COALESCE(SUM(...), 0))::int` — and then do **not** coerce
+on the JavaScript side: a strict comparison against a numeric literal is itself
+the check that the money columns are still `integer` and not the `bigint` or
+`numeric` the money-column note above warns about. `count(*)` has the same
+shape and the same `::int` fix.
+
+## drizzle's `migrate()` beats `psql -f` for a suite, and proves more
+
+`migrate(db, { migrationsFolder })` from `drizzle-orm/node-postgres/migrator`
+needs no `psql` on PATH, reads `drizzle/meta/_journal.json` so a second
+migration is picked up with no edit, and records what it applied in
+`drizzle.__drizzle_migrations` — a separate schema, so `information_schema`
+filtered to `public` still lists exactly the six tables. The `psql -f` route in
+`throwaway-postgres-probe-cluster` stays the right tool for a *probe*; a
+committed suite should migrate the way a service does.
+
+Resolve the folder from `import.meta.url`, never `process.cwd()` — same reason
+`HOUSE_RULESET_PATH` does in contract-tooling.
+
+## A figures suite must read SQL column names literally, not via the ORM
+
+The strongest single leg in the grid over `seed.integration.test.ts`: renaming
+`transactions.settlement_state` in **both** the schema module and the migration
+SQL leaves migrate and seed working and reddens only the cases whose SQL names
+the column (5 of 14). Had the queries gone through the Drizzle table objects the
+seed inserted with, all 14 would have stayed green — the rename would have been
+applied on both sides of an assertion that agrees with itself.
+
+The same grid corrected a prediction worth recording: the "drops the settlement
+filter" case stayed **green** under that rename, because its query filters on
+the window alone and never names the renamed column. A correct green, not a
+hole — but predict per case and by name, or a 5-of-6 result reads as a failure
+of the suite rather than of the prediction.
+
+## Legs that discriminate on a database-backed suite, and one that cannot
+
+Extends the seed's "a module-level consistency guard absorbs fixture mutations"
+note: `buildSeedRows` throws on an edited fixture, so on a suite that seeds in
+`beforeAll` every such leg reports **14 skipped**, not a red set. Aim elsewhere.
+What discriminated, each predicted by name first, total holding at 14:
+
+  drop `seedDatabase` from beforeAll   11 red — every figure case; the 2
+                                       migration cases and the re-seed case
+                                       (which seeds itself) stay green
+  drop `migrate` from beforeAll        14 skipped, exit 1, SQLSTATE 42P01
+  screenshot pin 540000 -> 550000       3 red, by name
+  screenshot pin 54 -> 53               3 red, by name
+  column renamed in schema + migration  5 red, by name
+
+The first is the one worth copying to any seeded suite: it separates "the
+schema exists" from "the data is there", which a green run cannot.
+
+## Assert an aggregate, not `SELECT DISTINCT ... rows[0]`
+
+A "there is one currency" case written as `SELECT DISTINCT c` and reading the
+first row passes whichever row the planner hands over, so a stray second
+currency is invisible. `string_agg(DISTINCT c, ',')` collapses to `'SEK'` when
+there is one and `'NOK,SEK'` when there are two, so `toBe('SEK')` is exact.
+Verified by planting one `NOK` row against a real server.
+
+## `test:all` now needs a Postgres as well as vacuum and oasdiff
+
+`packages/db/src/seed.integration.test.ts` runs against a real server, for the
+same reason the lint suite shells out to the real vacuum. Unlike those two it is
+**self-provisioning** where Postgres binaries exist, so it is a softer
+requirement — but the CI job running `test:all` should still set
+`TEST_DATABASE_URL` against a `services: postgres` container rather than rely on
+the runner image happening to ship `/usr/lib/postgresql/*/bin`. Recorded in
+`.plans/PREREQUISITES-*.md` under its own heading, with both routes.
