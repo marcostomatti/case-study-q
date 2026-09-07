@@ -2,7 +2,7 @@
 
 **Status:** design input, not implementation instructions
 **Audience:** planning / architecture agents and the humans reviewing their output
-**Stack:** TypeScript, Node, PostgreSQL, DrizzleORM, pnpm monorepo
+**Stack:** TypeScript, Node, PostgreSQL, DrizzleORM, bun-workspaces monorepo
 
 ---
 

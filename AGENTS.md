@@ -1,24 +1,66 @@
-## Workspace map
+# Repository guide
 
-| Path                 | Package                  | What it is                                                                                                         |
-| -------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `packages/*`         | `@marcos-corp/*`         |                                                                                                                    |
-| `clients/web-*`      | `@marcos-corp/web-*`     |                                                                                                                    |
-| `services/service-*` | `@marcos-corp/service-*` |                                                                                                                    |
-| `tools/ralph`        | —                        | The agent task loop (`bun run ralph plan \| start \| usage` from the repo root). Plans/trackers live in `.plans/`. |
+This repo is the deliverable for a technical case study (see `CASE-STUDY.md`).
+It is **public**: everything committed here is read by an external reviewer.
 
-Each package keeps its own `AGENTS.md` with package-specific conventions —
-read it before working inside that package. Both vendored packages are
-**fork-style copies** of their template repos: no automated sync; a change
-wanted in both places must be made in both repos.
+## What is here today
+
+| Path                        | What it is                                                                                     |
+| --------------------------- | ---------------------------------------------------------------------------------------------- |
+| `tools/ralph`               | The agent task loop (`bun run ralph plan \| start \| usage`), run from the repo root.           |
+| `tools/control-byte-gate`   | Byte-level scan of tracked files for control bytes and invisible codepoints. Imports nothing.   |
+| `tools/unsafeUnicode.mjs`   | The `house/no-unsafe-unicode` ESLint rule the gate above is kept in sync with.                  |
+| `.specs/`                   | Design input for the loop. Tracked, so the reviewer sees what the work was derived from.        |
+| `.plans/`                   | Plans and trackers the loop reads. Tracked, for the same reason.                                |
+| `PRESENTATION.md`           | Task 1 deliverable.                                                                              |
+| `README.md`, `CASE-STUDY.md`| Problem statement and interpretation.                                                            |
+
+No application packages exist yet. `.specs/01-bare-minimal-api-governance-poc.md`
+defines the target layout (`apps/*`, `packages/*`, `services/*`) that the plan
+builds out; `package.json` already declares those three workspace globs.
+
+## Naming
+
+- Package scope is `@marcos-corp/*`. The spec writes `@org/*` generically —
+  read it as `@marcos-corp/*`.
+- The spec's header says "pnpm monorepo"; this repo is **bun workspaces**.
+  `packageManager` is pinned in `package.json`.
 
 ## Shared tooling
 
-- `eslint.base.mjs` + `sharedRules.mjs` at the root; each package (and the
-  root) layers its own leaf `eslint.config.mjs` on top.
-- `tsconfig.base.json` is the shared strict core; leaves specialize
-  (DOM/react-jsx for ui/web, node-strict for service, root covers `tools/`).
+- `eslint.base.mjs` + `sharedRules.mjs` at the root; the root and each
+  workspace package layer their own leaf `eslint.config.mjs` on top.
+- `tsconfig.base.json` is the shared strict core; leaves specialize. The root
+  `tsconfig.json` covers `tools/` and root files only.
 - Root scripts: `lint:all`, `check-types:all`, `test:all` fan out to every
-  package; bare `lint`/`check-types`/`test` cover root files + `tools/`.
-- Runtime: bun-first (`packageManager` pinned). `@marcos-corp/web-*`'s test toolchain
-  additionally needs Node 22 on PATH (`bun x` shebang handling).
+  workspace package; bare `lint` / `check-types` / `test` cover root files and
+  `tools/`.
+- Runtime is bun-first. Node 22 is also required on PATH (`engines`).
+
+## Verification order
+
+Run in this order; each is cheap and the earlier ones localize failures better:
+
+```bash
+bun run lint && bun run check-types && bun run test && bun run gate:control-bytes
+```
+
+`gate:control-bytes` scans **tracked** files, so a file only enters its scope
+once it is committed.
+
+## Plans and specs
+
+- Specs live in `.specs/`, plans and trackers in `.plans/`. Both are tracked
+  on purpose: the spec, the plan derived from it, and the commits closing each
+  task are the provenance chain this case study is partly judged on.
+- Generate: `bun run ralph plan --spec=.specs/<file>.md`
+- Execute: `bun run ralph start --plan=.plans/PLAN-<stub>.md`
+- Never hand-edit a `PLAN_TRACKER-*.md` — the loop owns it.
+
+## Security posture
+
+- This repo is public and must stay that way for review. Never wire CI to a
+  self-hosted runner, and never commit anything that assumes a private host.
+- `.claude/worktrees/` is gitignored: it holds live git worktrees belonging to
+  a different repository. Git records embedded repos as gitlinks, so staging
+  them would publish dangling entries.

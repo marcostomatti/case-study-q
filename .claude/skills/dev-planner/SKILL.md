@@ -17,9 +17,9 @@ This skill specifies the format of plan documents produced for feature developme
 | `PLAN_TRACKER-<stub>.md` | Loop-parsed checklist; must use the exact format the parser expects |
 | `PREREQUISITES-<stub>.md` | Non-automatable setup steps required before the plan can run (only when any exist) |
 
-Plans are generated with `bun run ralph plan --spec=specs/<file>.md` (optionally `--stub=<name>`; the stub defaults to the spec's basename) and live at the repo root. The tracker is derived from the plan file by `trackerPathFor()` in `tools/ralph/utils/tracker.ts` (`PLAN-foo.md` → `PLAN_TRACKER-foo.md`) — never create or edit the tracker by hand during planning; the loop owns it. The unstubbed forms `PLAN.md` / `PLAN_TRACKER.md` / `PREREQUISITES.md` are also valid and are the loop's default (`bun run ralph start` with no `--plan`).
+Plans are generated with `bun run ralph plan --spec=.specs/<file>.md` (optionally `--stub=<name>`; the stub defaults to the spec's basename) and are written to `.plans/` by `plan.ts`. The tracker is derived from the plan file by `trackerPathFor()` in `tools/ralph/utils/tracker.ts` (`PLAN-foo.md` → `PLAN_TRACKER-foo.md`) — never create or edit the tracker by hand during planning; the loop owns it. The unstubbed forms `PLAN.md` / `PLAN_TRACKER.md` / `PREREQUISITES.md` are also valid and are the loop's default (`bun run ralph start` with no `--plan`).
 
-Execute a plan with `bun run ralph start --plan=PLAN-<stub>.md`.
+Execute a plan with `bun run ralph start --plan=.plans/PLAN-<stub>.md`.
 
 ---
 

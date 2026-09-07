@@ -1,5 +1,5 @@
 /**
- * `ar/no-unsafe-unicode`
+ * `house/no-unsafe-unicode`
  *
  * Flags characters that are invisible or misleading in a source file, and
  * that defeat the tools we rely on to review it:
@@ -188,6 +188,6 @@ export const noUnsafeUnicode = {
 };
 
 export default {
-  meta: { name: 'ar' },
+  meta: { name: 'house' },
   rules: { 'no-unsafe-unicode': noUnsafeUnicode },
 };

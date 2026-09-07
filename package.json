@@ -10,18 +10,20 @@
     "node": ">=22"
   },
   "workspaces": [
-    "packages/*"
+    "apps/*",
+    "packages/*",
+    "services/*"
   ],
   "overrides": {
     "zod": "4.5.1"
   },
   "scripts": {
     "lint": "eslint .",
-    "lint:all": "bun run lint && bun run --filter '@ar/*' lint",
+    "lint:all": "bun run lint && bun run --filter '@marcos-corp/*' lint",
     "check-types": "tsc --noEmit",
-    "check-types:all": "bun run check-types && bun run --filter '@ar/*' check-types",
+    "check-types:all": "bun run check-types && bun run --filter '@marcos-corp/*' check-types",
     "test": "vitest run",
-    "test:all": "bun run test && bun run --filter '@ar/*' test",
+    "test:all": "bun run test && bun run --filter '@marcos-corp/*' test",
     "gate:control-bytes": "bun tools/control-byte-gate/control-byte-gate.ts",
     "ralph": "bun tools/ralph/ralph.ts"
   },

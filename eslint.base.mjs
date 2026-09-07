@@ -108,10 +108,10 @@ export default defineConfig([
       '**/*.md', '**/*.json',
     ],
     plugins: {
-      ar: unsafeUnicode,
+      house: unsafeUnicode,
     },
     rules: {
-      'ar/no-unsafe-unicode': 'error',
+      'house/no-unsafe-unicode': 'error',
     },
   },
 ]);

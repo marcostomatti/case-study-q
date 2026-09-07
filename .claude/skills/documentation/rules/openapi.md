@@ -4,14 +4,17 @@
 schemas that validate requests at runtime, so the document describes the schema a
 request is actually parsed against rather than a second one written out beside it.
 
-> **Status:** INSTALLED in `@ar/service`. This rule records what is there, not a
-> convention to adopt on some later day. The registry landed in `309e3a2`
-> (*feat: assemble an OpenAPI registry from the seventeen binding tables*); around
-> it, `5036fda` added the dependency, `4e8c2ef` the `RouteSchemas` type, `5a08e46`
-> the export script, `1b80f58` the `docs:openapi` script, and `1ed0df4` plus
-> `1528c64` the guarded `GET /docs` mount. Every version and figure below was
-> measured at that tip and every one of them moves — re-derive rather than
-> quoting.
+> **Status:** NOT INSTALLED in this repository. This rule was measured in a
+> different repo (its commit references do not resolve here) and is kept as a
+> reference for the zod-4 -> OpenAPI emit path, which applies to a SERVICE's own
+> internal documentation only.
+>
+> It does NOT describe how published contracts are emitted here. Contract
+> packages under `packages/contracts-*` author schemas in **TypeBox** and emit
+> OpenAPI through **ts-rest** — deliberately, so that a schema which cannot be
+> represented in JSON Schema cannot be written in the first place. Zod stays the
+> tool for env parsing, internal coercion and request handling INSIDE a service.
+> Every version and figure below moves — re-derive rather than quoting.
 
 ---
 

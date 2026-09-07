@@ -9,9 +9,10 @@ criteria — **do not execute the plan**.
 
 ## Files to produce
 
-* Store the plan in `{PLAN_FILE}` (the `.plans/` directory is untracked on
-  purpose — plans may describe unpatched issues; never move them into a
-  tracked path).
+* Store the plan in `{PLAN_FILE}`. In THIS repository `.plans/` is tracked
+  on purpose: spec, plan and the commits closing each task form the
+  provenance chain a reviewer follows. Keep unpatched security detail out
+  of a plan rather than out of git.
 * If the plan assumes any prerequisite — a service running, a credential in an
   env var, an installed tool — create `{PREREQUISITES_FILE}` with those steps
   as a human checklist (see the PREREQUISITES.md format in the dev-planner

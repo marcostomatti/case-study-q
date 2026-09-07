@@ -8,7 +8,7 @@ description: >
 tags: [tsdoc, typedoc, openapi, swagger, express, mcp, react]
 ---
 
-> Scope: file paths in this document are relative to `packages/service/` (the `@marcos-corp/service` package), except `.claude/`, `.plans/`, `.specs/`, and `tools/`, which live at the umbrella repo root.
+> Scope: file paths in this document are relative to the **service package the task is working in** (`services/service-*`), except `.claude/`, `.plans/`, `.specs/`, and `tools/`, which live at the repo root. This rule was written for a single `packages/service` package in another repository; treat every `packages/service/` path as `services/<the service you are editing>/`.
 
 # Documentation Skill
 

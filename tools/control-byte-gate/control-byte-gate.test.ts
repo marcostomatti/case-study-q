@@ -104,17 +104,17 @@ describe('isScannable', () => {
   it('scans source, config and docs', () => {
     for (const p of [
       'tools/ralph/ralph.ts',
-      'packages/service/src/index.ts',
+      'services/service-a/src/index.ts',
       'README.md',
       'package.json',
-      'packages/ui/src/styles/tokens.css',
+      'apps/web-a/src/styles/tokens.css',
     ]) {
       expect(isScannable(p), p).toBe(true);
     }
   });
 
   it('skips genuinely binary assets', () => {
-    expect(isScannable('packages/ui/src/assets/logo.png')).toBe(false);
+    expect(isScannable('apps/web-a/src/assets/logo.png')).toBe(false);
     expect(isScannable('app/fonts/Inter.woff2')).toBe(false);
   });
 
@@ -212,7 +212,7 @@ describe('scanText (codepoint scan)', () => {
 // feedback. This asserts they never drift apart on what counts as
 // unsafe.
 describe('agreement with the ESLint rule', () => {
-  it('flags the same characters as ar/no-unsafe-unicode', async () => {
+  it('flags the same characters as house/no-unsafe-unicode', async () => {
     const mod = await import('../../tools/unsafeUnicode.mjs');
     const findUnsafeUnicode = mod.findUnsafeUnicode as (t: string) => unknown[];
     const probes = [
