@@ -1360,10 +1360,11 @@ claim, and a suite that only does one of them reads as covering both.
 
 ## Reading a Drizzle table back as data, and where the helper lives
 
-`packages/db/src/testing/tableFacts.ts` exports `columnFacts`, `sqlTableName`
-and `foreignKeyFacts`. Every remaining schema task in `packages/db` should
-import it rather than re-deriving the introspection, and any suite asserting
-what a migration will emit should go through it.
+`packages/db/src/testing/tableFacts.ts` exports `columnFacts`, `sqlTableName`,
+`foreignKeyFacts`, `primaryKeyFacts` and `indexFacts`. Every remaining schema
+task in `packages/db` should import it rather than re-deriving the
+introspection, and any suite asserting what a migration will emit should go
+through it.
 
 - `getTableColumns` / `getTableName` come from `drizzle-orm`;
   `getTableConfig` (foreign keys, indexes, unique constraints) is
@@ -1399,3 +1400,90 @@ Adds to the three leaf-gate rules above. `ignoreChainWithDepth: 2` means
 errors. `eslint --fix` handles it and the result is the repo's house style, so
 run `bunx eslint . --fix` before reading the failures as a design problem —
 but expect every schema module to come out with its chains split across lines.
+
+## A composite primary key hides from `columnFacts` — read `primaryKeyFacts`
+
+`.primaryKey()` on a **column** builder sets `column.primary`; a table-level
+`primaryKey({ columns: [...] })` does not touch any column. So every column of
+a composite key reports `isPrimaryKey: false`, and a suite asserting only
+`columnFacts` describes the table as having no key at all — green, and wrong.
+`primaryKeyFacts(table)` reads `getTableConfig(table).primaryKeys` and returns
+`{ name, columns }`; drizzle derives the name as
+`<table>_<col>_<col>..._pk`, so a rename that pushes it past Postgres's 63-byte
+identifier limit shows up there and nowhere else.
+
+`indexFacts(table)` is the same argument for indexes: an index reaches no
+inferred type and no `columnFacts` entry, so a refactor that drops one is a
+silent seq-scan regression that passes all four gates. Its `name` and `method`
+are `string | undefined` in drizzle's types — an anonymous `index()` has its
+name derived later by drizzle-kit — so the interface says so rather than
+casting.
+
+## Declare drizzle indexes ASCENDING even when every read sorts newest first
+
+Repo decision, taken with `transactions_company_id_booked_at_idx`, and it
+applies to every index still to be added here. Drizzle's index column builder
+renders `.desc()` as `DESC NULLS LAST` — the opposite of Postgres's default for
+a descending sort — and the planner matches a pathkey literally, so such an
+index is unusable by a plain `ORDER BY x DESC` **even on a NOT NULL column**.
+An ascending index carries no nulls qualifier and is simply read backwards for
+the same query.
+
+Consequence for the repository layer: write the ordering as a bare
+`ORDER BY <col> DESC`. Do **not** "match the index" by spelling
+`desc nulls last` — that is the fix for the opposite mistake (an index already
+declared `.desc()`), and here it would cost the index instead of using it.
+Skill: `drizzle-order-by-nulls-last-pathkey`.
+
+## Money columns: `integer` minor units, and the two ways that type drifts
+
+- The ceiling is 2 147 483 647 minor units — 21 474 836.47 in a two-decimal
+  currency. Widening to `bigint` is a migration the provider owns and a change
+  no consumer can see, because the contract states its own integer type
+  independently. That is worth saying in the module rather than discovering at
+  the overflow.
+- **drizzle renders `bigint` and `numeric` as TypeScript `string` by default**,
+  so both the widening above and a well-meant "money should be numeric" change
+  silently turn every arithmetic site into string concatenation. Pin
+  `expectTypeOf<Row['xMinorUnits']>().toEqualTypeOf<number>()` in the leaf's
+  `.test-d.ts`; nothing else in the four-gate order catches it.
+
+## Three shapes of contract/database divergence, and only one is a rename
+
+The stage note says column names must be "deliberately unlike the contract
+field names". Taken literally that produces a thesaurus exercise. What the
+tables actually landed, and what the mapping tasks in `services/service-a`
+should expect to translate:
+
+- **A renamed column** — `cards.lifecycle_status` for the contract's card
+  state. The weakest of the three: a mapper that only renames is a rename.
+- **A structural difference** — `transactions` stores `amount_minor_units` and
+  `currency_code` as two flat columns; the contract publishes one money object.
+  And `merchant_category_code` is a raw open-set ISO-18245 MCC where the
+  contract publishes a coarse enum, which is the concrete reason spec §2.5
+  needs an explicit `unknown` member: a new MCC in the acquirer feed must not
+  break a pinned consumer.
+- **A field with no column at all** — the `5 400` of `5 400/10 000 kr`.
+  `spend_limits` stores the cap and nothing else; remaining spend is the cap
+  minus the settled transactions in the window. A derived schema could not
+  produce the payload the screen renders, which is the strongest single
+  argument in this repo for spec §2.1.
+
+Assert the third kind as an absence (`sqlNames` does not contain `remaining`),
+or the case that a later "just cache it" column would break does not exist.
+
+## `ON DELETE` is a per-table judgement; assert it or it gets unified
+
+`spend_limits` cascades from `cards` (configuration scoped to a card);
+`cards`, `transactions` and everything else restrict (a financial record must
+not vanish with its parent). One table differing from the rest reads as an
+oversight to the next person, so the divergence is asserted with a case whose
+name says why. Inferred types erase `onDelete` entirely — measured again here:
+flipping cascade to restrict left `check-types` green and reddened exactly one
+named case.
+
+Also worth stating where it bites: two independent foreign keys on a
+denormalised child (`transactions.card_id` + `transactions.company_id`) do
+**not** enforce that the child's company matches the card's. That needs a
+composite key against `cards (id, company_id)`. Record the invariant and its
+owner in the module header rather than leaving it to be found in a bad row.

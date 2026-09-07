@@ -50,6 +50,23 @@ export interface ForeignKeyFacts {
   onDelete: string | undefined;
 }
 
+export interface PrimaryKeyFacts {
+  /** The constraint name `CREATE TABLE` writes, derived unless one was given. */
+  name: string;
+  /** Columns in key order, which decides which prefix lookups the key serves. */
+  columns: string[];
+}
+
+export interface IndexFacts {
+  /** `undefined` for an anonymous `index()`, whose name drizzle-kit derives later. */
+  name: string | undefined;
+  /** Columns in index order. An expression index reports `undefined` for that entry. */
+  columns: (string | undefined)[];
+  unique: boolean;
+  /** `btree` unless the index asked for something else. */
+  method: string | undefined;
+}
+
 /**
  * Keyed by **TypeScript property name**, valued by what that property becomes
  * in SQL. That pairing is the rename itself, so asserting the whole record at
@@ -74,6 +91,46 @@ export const columnFacts = (table: Table): Record<string, ColumnFacts> => {
 
 /** The table name as it reaches SQL, which need not match the exported binding. */
 export const sqlTableName = (table: Table): string => getTableName(table);
+
+/**
+ * Table-level primary keys, which is where a **composite** key lives and the
+ * only place it can be read from.
+ *
+ * `.primaryKey()` on a column builder sets `column.primary`, so `columnFacts`
+ * reports it. `primaryKey({ columns: [...] })` on the table does not touch any
+ * column — every column of a composite key reads `isPrimaryKey: false`. A suite
+ * that only asserts `columnFacts` therefore describes a table with a composite
+ * key as having no key at all, which is why this exists.
+ */
+export const primaryKeyFacts = (table: PgTable): PrimaryKeyFacts[] => {
+  const { primaryKeys } = getTableConfig(table);
+
+  return primaryKeys.map((primaryKeyConstraint) => ({
+    name: primaryKeyConstraint.getName(),
+    columns: primaryKeyConstraint.columns.map((column) => column.name),
+  }));
+};
+
+/**
+ * Declared indexes. Invisible to every inferred type and to `columnFacts`, so
+ * an index dropped in a refactor is otherwise a silent performance change that
+ * no gate in the verification order can see.
+ *
+ * Column order is asserted rather than the column set: a composite index serves
+ * only the prefixes of its own ordering.
+ */
+export const indexFacts = (table: PgTable): IndexFacts[] => {
+  const { indexes } = getTableConfig(table);
+
+  return indexes.map((tableIndex) => ({
+    name: tableIndex.config.name,
+    columns: tableIndex.config.columns.map((column) => ('name' in column
+      ? column.name
+      : undefined)),
+    unique: tableIndex.config.unique,
+    method: tableIndex.config.method,
+  }));
+};
 
 /**
  * `getTableConfig` is Postgres-specific, hence the narrower parameter type.
