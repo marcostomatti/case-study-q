@@ -3808,3 +3808,104 @@ Refines the note above that says an empty object emits no `required` key. It
 does still emit `properties`, as an empty object, so a full-shape `toEqual` over
 a no-property schema needs `properties: {}` present and `required` absent. The
 asymmetry is easy to get backwards and costs one red run per occurrence.
+
+## Adding `scripts/` to a leaf costs THREE config lines, and each gate is silent about the others
+
+Consolidates what `contracts-service-b`'s emit task needed, because the same
+three lines are wanted by any leaf that grows a build script and each omission
+fails in a different, quiet way:
+
+  tsconfig.json     include ["src", "scripts", "*.ts"]  <- else a type error in
+                                                           the script passes
+                                                           every gate
+  vitest.config.ts  include [..., 'scripts/**/*.test.ts'] <- else the suite is
+                                                           collected by nothing
+  package.json      the `contracts:emit` script + the `@marcos-corp/contract-
+                    tooling` devDependency (ranged `^0.1.0`, not pinned)
+
+eslint needs no line — it lints a `scripts/` file regardless. Measured on
+`contracts-service-b` with negative controls after the three landed:
+`tsc --listFiles` names `scripts/emit.ts` and **not** `scripts/emit.test.ts`
+(the `**/*.test.ts` exclude still applies inside `scripts/`), a
+`const JSON_INDENT: string = 2` reddens `check-types` with TS2322, a
+double-quoted string reddens `lint`, and `eslint . -f json` reads 19 files
+including both scripts and **zero** under `openapi/`.
+
+## Mirror a leaf by diffing through `sed`, which catches the constants a copy forgets
+
+Extends the "for a mirror package X, diff the configs" note with the form that
+works once the two packages differ only by name. Substituting the service name
+out of both sides turns a faithful mirror into an empty diff:
+
+  diff <(sed 's/service-b/service-X/g' <new>/package.json) \
+       <(sed 's/service-a/service-X/g' <template>/package.json)
+
+All three of `package.json`, `tsconfig.json` and `vitest.config.ts` came out
+empty for `contracts-service-b`, which is a stronger reading than re-reading
+each file — it catches both a missed line and a template-specific line copied
+where it does not belong.
+
+## The byte-identity suite's sharpest leg is REPOINTING the artifact path
+
+Measured over `contracts-service-b/scripts/emit.test.ts`, whose emit script is a
+near-copy of `contracts-service-a`'s. Four legs, each predicted by case name
+first, total holding at 13:
+
+  re-indent the committed file to 4 spaces   1 red — the byte case ONLY
+  change a value in the committed file       2 red — structural + byte
+  repoint OPENAPI_DOCUMENT_PATH at the       3 red — the tracked-artifact case
+    SIBLING package's artifact                       first, then both others
+  change the title in emit.ts, no re-emit    2 red — structural + byte
+
+The third is the one worth carrying. When an emit script is copied between
+contract packages, the failure that copy invites is the path constant still
+pointing at the package it came from — and byte-identity against the *sibling's*
+artifact would then be green and meaningless. `TRACKED_ARTIFACT_TAIL` naming
+this package is what catches it, so update that constant in the same edit that
+copies the file. The first leg is the other one to keep: it says the structural
+comparison does not subsume the byte comparison.
+
+## A small emitted document makes "the rule matched nothing" a live risk
+
+`contracts-service-b`'s document is a quarter of `contracts-service-a`'s — one
+operation, four components, one enum outside the error catalogue. A house rule
+whose `given` matches no node is silent coverage loss rather than an error, so
+the per-rule controls matter *more* on a small document, not less. All six fired
+exactly their own code against this one (measured on vacuum 0.30.3 before the
+suite was written), and `house-object-additional-properties-explicit` reported
+**two** findings for one deleted key — the `$ref` double-report again, so assert
+the code SET.
+
+Control targets that transfer to any contract package, since three of
+`contracts-service-a`'s name schemas that package alone owns:
+
+  house-no-typeless-schema      delete `type` from `Error.message`   (portable)
+  house-object-additional-...   delete it from any `$ref`d component
+  house-enum-has-unknown-...    drop `unknown` from any published enum
+  house-deprecated-requires-... set `deprecated: true` on any operation
+  house-operation-id-and-...    delete any `operationId`
+  house-no-null                 make any string field `["string","null"]`
+
+## Prove a committed baseline is read: doctor it, then delete it
+
+The first published baseline is byte-identical to the working emit, so gate 3
+reports `passed` having compared a document against itself — which reads as "the
+change is safe" and means "there was no change". Refines the earlier note with
+the probe that settles it for a real contract package rather than a scratch one:
+`cpSync` the whole package to `mkdtemp` (filtering `node_modules`, per the gate-4
+test's note), then two `runGates` runs against that copy.
+
+  baseline + an extra REQUIRED response property
+      -> diff failed, dependency not-run, reason naming
+         `response-required-property-removed` and the operationId
+  same copy, baseline deleted
+      -> diff skipped, dependency passed
+
+Direction is the easy thing to invert: the **baseline** must carry what the
+revision lacks. The second run is what says the first is not failing for an
+unrelated reason — the only thing that changed between them is the file gate 3
+resolves.
+
+`runGates` takes its meta as `{ info, components, security }`, which the emit
+script's own `buildDocument()` output supplies directly — no second copy of the
+metadata, same argument as the byte-identity test re-emitting through `./emit`.

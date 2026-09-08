@@ -1,0 +1,232 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "service-b",
+    "version": "0.1.0",
+    "description": "Invoices for the company dashboard banner. service-b publishes this contract while pinning @marcos-corp/contracts-service-a at an exact version to resolve company context, so the same team authors a contract change on one side and approves one on the other. Consumers pin this package exactly. See docs/governance.md.",
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "consumerCredential": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "The credential issued to a registered consumer. The provider resolves a client_id from it and records that id against the operation and contract version on every request (spec 2.3), so the id is never something the caller states about itself. An absent or unrecognised credential is the 401 every operation declares."
+      }
+    },
+    "schemas": {
+      "DueInvoice": {
+        "description": "The invoice a company still owes. Absent when it owes nothing.",
+        "additionalProperties": true,
+        "type": "object",
+        "properties": {
+          "invoice": {
+            "$ref": "#/components/schemas/Invoice"
+          }
+        }
+      },
+      "Error": {
+        "description": "The shared error payload every error response carries.",
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "validation_failed",
+              "unauthenticated",
+              "not_found",
+              "internal_error",
+              "unknown"
+            ],
+            "description": "Machine-readable error code. Unrecognised values are `unknown`."
+          },
+          "message": {
+            "description": "Human-readable description of the failure, for diagnosis.",
+            "minLength": 1,
+            "examples": [
+              "companyId must be between 1 and 64 characters"
+            ],
+            "type": "string"
+          },
+          "fields": {
+            "description": "Which request fields are at fault. Absent when no single field is.",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "description": "Dotted path from the request root to the offending field.",
+              "minLength": 1,
+              "examples": [
+                "companyId"
+              ],
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Invoice": {
+        "description": "An invoice as the mobile view's `Invoice due` banner renders it.",
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "dueOn",
+          "total",
+          "paymentState"
+        ],
+        "properties": {
+          "id": {
+            "description": "Opaque invoice identifier. Echo it back; never parse it.",
+            "minLength": 1,
+            "maxLength": 64,
+            "examples": [
+              "33333333-3333-4333-8333-333333333333"
+            ],
+            "type": "string"
+          },
+          "dueOn": {
+            "description": "The day the invoice falls due, in the company's jurisdiction.",
+            "format": "date",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "minLength": 10,
+            "maxLength": 10,
+            "examples": [
+              "2026-09-20"
+            ],
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/MonetaryAmount"
+          },
+          "paymentState": {
+            "type": "string",
+            "enum": [
+              "awaiting_payment",
+              "paid",
+              "cancelled",
+              "unknown"
+            ],
+            "description": "Invoice payment state. Unrecognised values are `unknown`."
+          }
+        }
+      },
+      "MonetaryAmount": {
+        "description": "An amount of money as an integer count of a currency's minor unit.",
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "minorUnits",
+          "currency"
+        ],
+        "properties": {
+          "minorUnits": {
+            "description": "Signed amount in the currency's minor unit. 2 480,00 kr is 248000.",
+            "examples": [
+              248000
+            ],
+            "type": "integer"
+          },
+          "currency": {
+            "description": "ISO-4217 alphabetic currency code, uppercase.",
+            "pattern": "^[A-Z]{3}$",
+            "minLength": 3,
+            "maxLength": 3,
+            "examples": [
+              "SEK"
+            ],
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "consumerCredential": []
+    }
+  ],
+  "paths": {
+    "/companies/{companyId}/due-invoice": {
+      "get": {
+        "operationId": "getCompanyDueInvoice",
+        "summary": "Read the invoice a company still owes, if it owes one.",
+        "description": "Backs the `Invoice due` banner. An absent `invoice` means the company owes nothing, which is an ordinary answer rather than a failure.",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "description": "Opaque company identifier, as issued by service-a.",
+              "minLength": 1,
+              "maxLength": 64,
+              "examples": [
+                "11111111-1111-4111-8111-111111111111"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The invoice a company still owes. Absent when it owes nothing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DueInvoice"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The shared error payload every error response carries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The shared error payload every error response carries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The shared error payload every error response carries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The shared error payload every error response carries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

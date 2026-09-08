@@ -12,7 +12,9 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src", "*.ts"],
+  // `scripts` is in scope on purpose: scripts/emit.ts is gate 1 for this
+  // package, and a build script nothing type-checks is a gate nothing reads.
+  "include": ["src", "scripts", "*.ts"],
   // *.test.ts is excluded from check-types (parity with the root tsconfig —
   // vitest executes them; tsc doesn't gate them).
   "exclude": ["node_modules", "dist", ".tmp", "**/*.test.ts"]
