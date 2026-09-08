@@ -3720,3 +3720,91 @@ and the shape `services/service-b`'s equivalent should copy:
 - **It needs no `Proxy` handle and asserts no `api_usage` row.** The real
   database is behind it, and `server.test.ts` owns the telemetry and mount-
   order claims — this one owns payloads.
+
+## `contracts-service-b` re-states the shared primitives; it does not import them
+
+`packages/contracts-service-b` is four modules mirroring `contracts-service-a`'s
+layout minus what it does not publish: `schemas/shared.ts` (the object builders,
+`MonetaryAmount`, `CurrencyCode`, `CalendarDate`, `CompanyId`),
+`schemas/error.ts`, `schemas/invoice.ts` and `contract.ts` with the single
+`getCompanyDueInvoice` operation. `services/service-b`, `apps/web-b` and the
+emit task should import from `src/index.ts`.
+
+The duplication between the two contract packages is deliberate and is the
+answer a reviewer will ask for: they are **versioned independently** (spec §2.2),
+so a runtime import from one into the other makes every edit to
+`contracts-service-a` a candidate version bump of `contracts-service-b`, and
+every `service-b` consumer then reviews a change to an API it does not call.
+That covers `contractSchema`, the builders and `MonetaryAmount` alike. Where the
+two agree they agree because both state the same house convention, not because
+one reads the other's source.
+
+Three deltas from `contracts-service-a` worth not "fixing" into uniformity:
+
+- **A smaller error catalogue.** No `conflict` (this contract is one read), and
+  deliberately no `upstream_unavailable` / `502` / `503` even though `service-b`
+  consumes `service-a`. Which services a provider calls is a deployment fact,
+  not an API promise, and a consumer's response to an upstream failure is the
+  same retry `internal_error` already asks for.
+- **`CalendarDate`, a primitive `contracts-service-a` has no use for.** An
+  invoice falls due on a *day*; published as a `date-time` it renders as the
+  previous day for a reader in another zone. Same line `packages/db` draws with
+  `invoices.due_on` being the one column that is not a `Date`.
+- **A "nothing to report" answer is an envelope with an optional field, not a
+  `404`.** `DueInvoice` is `{ invoice?: Invoice }`. `404` already means "no such
+  company, or not yours to see", so returning it for "this company owes
+  nothing" makes an empty screen indistinguishable from an authorisation
+  failure; `204` gives one question two success shapes and leaves nowhere to add
+  a field. Reach for the envelope wherever a read can legitimately find nothing.
+
+## An enum whose operation only ever emits one member is still worth publishing
+
+Came up authoring `InvoicePaymentState`, and it recurs wherever a contract enum
+looks vacuous. Today's one operation returns the invoice a company still owes,
+so the field is always `awaiting_payment` — which reads like an argument for a
+one-member enum plus `unknown`.
+
+The seed is the counter-argument, and it is the reason the seed was built that
+way: `packages/db` plants a second, already-`paid` invoice due *earlier* than
+the issued one, so a lookup that forgets `payment_state = 'issued'` returns the
+wrong row. With the full enum a consumer handed that row renders a settled
+invoice as settled and the provider's bug is visible; with a one-member enum it
+can only say "you owe this". The state is a fact about the entity, not about the
+operation that fetched it.
+
+The other half of the same decision: the provider's `draft` gets **no** contract
+member at all. A value a consumer must never see is not folded onto `unknown` —
+it is simply absent from the published vocabulary, and a case asserting the
+absence (with an inverting control that the list is non-empty) is what keeps a
+later "align the vocabularies" from publishing it.
+
+## `ServerInferRequest` omits `body` entirely on a route that declares none
+
+Small, and it will recur in every remaining ts-rest task. On a GET with no
+`body`, `ServerInferRequest<R>['body']` is **TS2339**, not `undefined` — the key
+is absent from the type rather than optional. So the inverting "takes no body"
+case has to be `expectTypeOf<ServerInferRequest<R>>().not.toHaveProperty('body')`,
+the same spelling the `params` absence case already uses. Same for `query`.
+
+## vitest's JSON reporter nests case names one level deeper than it looks
+
+For any mutation-grid driver that wants the failing case *names* rather than a
+count. `--reporter=json` writes `testResults[]` as one entry per **file**
+(`name`, `status`, `assertionResults`), and the per-case records with
+`fullName` / `title` / `status` are under `assertionResults`. Reading
+`testResults[].fullName` throws `KeyError`, which in a driver that swallows it
+reads as "no failures". Extract with:
+
+    [a['fullName'] for f in report['testResults']
+     for a in f['assertionResults'] if a['status'] == 'failed']
+
+and take the total from `report['numTotalTests']`, which is what the "read the
+total, never the exit code" note above needs. Note bun prints a line before the
+JSON, so slice from the first `{` rather than parsing stdout whole.
+
+## `Type.Object({}, options)` emits `properties: {}` — an empty map, but no `required`
+
+Refines the note above that says an empty object emits no `required` key. It
+does still emit `properties`, as an empty object, so a full-shape `toEqual` over
+a no-property schema needs `properties: {}` present and `required` absent. The
+asymmetry is easy to get backwards and costs one red run per occurrence.

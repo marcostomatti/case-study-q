@@ -1,8 +1,8 @@
 import { defineConfig } from 'vitest/config';
 
-// Colocated suites only. `bun run test` currently passes with no test files
-// (see the --passWithNoTests flag in package.json); drop that flag in the
-// task that adds this package's first suite.
+// Colocated suites only. The `--passWithNoTests` flag this package was created
+// with is gone: from the first suite on, a leaf whose tests vanish must go red
+// rather than green.
 export default defineConfig({
   test: {
     environment: 'node',
