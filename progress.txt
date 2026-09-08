@@ -2643,3 +2643,110 @@ with `depth < 1` guarding the recursive call — which reddened exactly the
 `src/schemas/card.ts` case and left `src/index.ts` green. Predict per case by
 name, and when a boundary leg reddens more than predicted, check whether the
 mutation was coarser than the claim before concluding the case is redundant.
+
+## zod 4.5.1: what a MISSING value reports, and why `z.coerce` destroys the answer
+
+Measured while writing the first Zod schema in this repo, and it binds every
+later one — `service-b`'s env module, `service-a`'s post-parse request
+coercion, the repository-layer shapes.
+
+- **`z.coerce.number()` cannot tell "not set" from "not a number".** Both
+  report `invalid_type` with `received: 'NaN'`, because `Number(undefined)` is
+  `NaN`. A schema written the obvious way therefore answers a missing `PORT`
+  with `Invalid input: expected number, received NaN`. Read the value as
+  `z.string()` and convert inside a `.transform(Number)` instead: an absent key
+  then reports `expected string, received undefined` and stays separable.
+- **Zod's own message is never the readable half.** For an absent key it is
+  `Invalid input: expected string, received undefined` — it does not name the
+  variable, does not say it is unset, and does not say what to put there.
+  Derive "missing" from the *source* (`source[name] === undefined`) rather than
+  from the issue, and render the sentence yourself. That also removes any
+  dependence on zod's internal issue shape.
+- `issue.path[0]` is the key, `issue.message` is the text, and an object schema
+  collects **all** field issues in one `safeParse` — so reporting only the
+  first is a choice, not a limitation. Order the report yourself; zod's order is
+  schema-key order and is not a promise.
+- `.transform()` on the object runs after every field is validated, so keying a
+  schema on `SHOUTY_ENV_NAMES` and handing back ordinary field names costs
+  nothing and keeps the upper snake case out of the rest of the service.
+- `z.string().regex(...)` messages compose into a sentence if every one is
+  written to start with `must`, which is what lets a renderer say
+  `PORT is '80x', which must be a whole number` from data.
+
+## A "we ignore undeclared input" claim is NOT held by a Zod schema
+
+Zod strips unknown keys by default, so adding `.strictObject` to a schema that
+is already handed a filtered object reddens **nothing** — measured. The
+property belongs to whatever copies the declared keys out of the source, and a
+case asserting it is only load-bearing against a leg that mutates *that*, not
+the schema. The leg that works is the naive implementation: pass the whole
+source through and make the schema strict. It reddened four cases here.
+
+General shape: when a guard could plausibly live in two layers, find which
+layer actually holds it before writing the case, or the case pins the wrong
+one. Skill: `accepting-cases-need-inverted-legs`.
+
+## Redaction belongs to the built finding, not to the renderer
+
+Any failure this repo renders for an operator may carry a credential —
+`DATABASE_URL` is the first, and `service-b`'s env, the repository layer and
+the usage logger all follow. Two rules that survived a mutation grid:
+
+- **Mark the variable, not the message.** The spec entry carries
+  `carriesCredentials`, the report describes a rejected secret rather than
+  echoing it, and an *undeclared* variable defaults to secret — so a schema
+  that grows a key nobody declared cannot leak it.
+- **Redact when the finding is built.** A caller that logs the structured
+  `problems` array as JSON gets the same protection as one that prints
+  `error.message`. Verified by re-reading both with a second reader
+  (`expect(...).not.toContain(password)`), not by trusting the renderer's own
+  account. Skill: `verify-redaction-by-rereading-output`.
+- Two neighbours worth copying: collapse whitespace runs in any echoed value
+  (a newline in a value otherwise breaks a one-line-per-problem report), and
+  cap its length (a variable holding a pasted file otherwise becomes the whole
+  failure).
+
+## The `.test-d.ts` boundary for a Zod module, measured
+
+Extends the "runtime and type assertions over the same module are not
+redundant" note, which was measured on Drizzle. On a Zod module the split lands
+differently and is worth knowing before writing either suite:
+
+  widen an exported union field to `string`     check-types RED (2), test GREEN
+  drop `readonly` from an exported list type    check-types RED (1), test GREEN
+  drop `.transform(Number)` from the port       check-types RED (1), test RED (4)
+  key the output on the raw env names           check-types RED (1), test RED (5)
+
+So the type suite owns the *shape of the exported surface* — the unions a
+caller switches on, the immutability of an exported list — and the runtime
+suite owns everything a parse actually does. The conversions are covered twice,
+because `toEqual({ port: 4001 })` does not match `'4001'`. Write the type suite
+for the first group; do not write it expecting to be the only thing catching a
+conversion.
+
+## `services/service-a/src/config/env.ts` is where the service's settings come from
+
+`loadServiceEnv(source?)` returns `{ databaseUrl, port, contractVersion }` or
+throws an `EnvironmentError` carrying `problems`. Also exports
+`SERVICE_ENV_VARIABLES` (the declared list, as data), `serviceEnvSchema`,
+`EnvSource`, `EnvVariable` and `EnvProblem`, all re-exported from the package's
+`src/index.ts`. `server.ts`, the repositories, the usage logger,
+`docker/compose.yaml` and `scripts/demo.ts` should read the variable list from
+there rather than restating it.
+
+Four conventions `service-b`'s equivalent should copy rather than re-derive:
+
+- **No defaults, for anything.** A default port makes "PORT is not set"
+  unreachable and a default connection string is how a service talks to
+  whichever database was listening — the same argument `drizzle.config.ts`
+  already makes.
+- **A blank value is read as unset**, and values are trimmed first. `PORT=` in
+  a compose env file hands the process an empty string, not an absent key.
+- **The contract version is stated by the deployment, not read from the
+  workspace manifest** — a build must keep reporting the version it was built
+  from after the tree moves on — and is refused unless it is an exact release
+  version, the only spelling `latestPublishedSpec` names a baseline after.
+- **Nothing parses at import time.** `loadServiceEnv` is a function, not a
+  module-level singleton, so importing any part of the service on a machine
+  with no environment still works. Verified with `bun src/index.ts`, which
+  exits 0 with none of the three variables set.

@@ -2,11 +2,11 @@
  * Entrypoint and public surface of `@marcos-corp/service-a`, the provider for
  * cards and transactions.
  *
- * Placeholder: the Zod-parsed env config, the client identity middleware, the
- * usage logger, the Drizzle-row-to-contract mapping layer, the ts-rest routes
- * and the Express `server.ts` factory land in later tasks and are wired in
- * here. `bun run dev` runs this file, so it becomes the process entrypoint
- * once `server.ts` exists.
+ * What has landed: `config/env.ts`, the Zod-parsed environment. Still to come
+ * and wired in here as they arrive: the client identity middleware, the usage
+ * logger, the Drizzle-row-to-contract mapping layer, the ts-rest routes and the
+ * Express `server.ts` factory. `bun run dev` runs this file, so it becomes the
+ * process entrypoint once `server.ts` exists.
  *
  * Two constraints bind everything added to this package:
  *
@@ -17,6 +17,16 @@
  * - Drizzle row shapes from `@marcos-corp/db` never reach a response. The
  *   mapping layer translates them, which is what lets a column rename stay a
  *   non-breaking change.
+ *
+ * Re-exporting a module here must stay side-effect free. `loadServiceEnv` is a
+ * function rather than a parsed singleton for exactly that reason: importing
+ * this file must not require an environment.
  */
 
-export {};
+export {
+  EnvironmentError,
+  loadServiceEnv,
+  SERVICE_ENV_VARIABLES,
+  serviceEnvSchema,
+} from './config/env';
+export type { EnvProblem, EnvVariable, ServiceEnv } from './config/env';
