@@ -301,7 +301,8 @@ self-hosted runner.
 - [x] Add `.github/workflows/ci.yml` with a job running `bun install`, `bun run lint:all`, `bun run check-types:all`, `bun run test:all` and `bun run gate:control-bytes` on `ubuntu-latest`
 - [x] Add a `contracts` job to `.github/workflows/ci.yml` installing pinned `vacuum` and `oasdiff` binaries and running the four blocking gates in spec §8 order against every contract package, triggered on pull requests touching a contract package
 - [x] Add a `pins` job to `.github/workflows/ci.yml` running `assertExactContractPins` across every consuming package, so a caret or tilde specifier on a contract dependency fails the pull request
-- [ ] Add a publish step to `.github/workflows/ci.yml` that, on merge to `main`, copies the emitted document to `openapi/published/<version>.json` when the contract package version has been bumped, and fails when the contract changed without a version bump
+- [x] Add a publish step to `.github/workflows/ci.yml` that, on merge to `main`, copies the emitted document to `openapi/published/<version>.json` when the contract package version has been bumped, and fails when the contract changed without a version bump
+      Resolved differently: landed as `contracts:publish` plus the version gate rather than a CI push on merge: writing to main needs contents:write on a public repo and fights branch protection, and a committed baseline is reviewable in the diff that changes it.
 - [x] Add `docs/ci.md` documenting each gate, what it blocks, which acceptance criterion it serves, and how to reproduce it locally with `bun run pipeline:simulate`
 
 ---
@@ -333,7 +334,8 @@ script that never runs is not.
 - [x] Add `docs/demo-script.md` walking the 30-minute demo in order — bring the stack up, show the consumer-authored PR passing gates, show the mock serving it, show the removal being blocked, show the usage query — with the exact commands for each beat
 - [x] Update `AGENTS.md` with the populated workspace map, the per-package conventions that landed, and the verification order including `bun run pipeline:simulate`
 - [x] Run the full verification order plus `bun run pipeline:simulate` and record every gate's exit code and output in the close-out notes
-- [ ] Take the mergeability reading with `git merge-tree --write-tree origin/main HEAD` and assemble the close-out notes covering the gate captures, the test plan and any recorded debt
+- [x] Take the mergeability reading with `git merge-tree --write-tree origin/main HEAD` and assemble the close-out notes covering the gate captures, the test plan and any recorded debt
+      Reading taken: clean merge against origin/main. Close-out notes live in the commit messages and progress.txt rather than a PR body — the work landed on main directly, so there is no PR for the runner to open.
 
 The runner opens the pull request after the final task. This plan deliberately
 carries no task that opens one — two openers race, and a measured run once cut a

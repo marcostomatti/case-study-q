@@ -57,13 +57,27 @@ Promoted, do not re-derive:
 
 ## Open debt
 
-- `.github/workflows/ci.yml` has no publish step yet: nothing copies the emitted
-  document to `openapi/published/<version>.json` on merge, and nothing fails a
-  contract change that arrives without a version bump. Gate 3 currently compares
-  against a baseline that is only ever advanced by hand.
-- `services/service-b` has a client for `service-a` but no routes and no server,
-  so it is a consumer in fact and a provider only on paper.
-- `scripts/pipeline-simulation.ts` has no test of its own; the acceptance scripts
-  cover the gates it runs but not its own reporting.
-- `docs/breaking-changes.md` and `docs/field-retirement.md` are unwritten;
-  `docs/governance.md` covers the same ground at a lower resolution.
+Six plan tasks remain unbuilt. None blocks the demo; all are recorded so the
+next run does not rediscover them.
+
+- `services/service-b` has a client for `service-a` but no routes and no
+  server, so it is a consumer in fact and a provider only on paper. Its
+  due-invoice operation is declared in `contracts-service-b` and answered by
+  nothing.
+- No integration test for that endpoint, for the same reason.
+- `scripts/pipeline-simulation.ts` has no test of its own. The acceptance
+  scripts cover the gates it runs, but not its own reporting — a change that
+  broke its output formatting would be invisible.
+- No test asserting the five acceptance scripts exit with the codes they claim.
+  Each is verified by hand and in CI, but nothing would catch one that silently
+  stopped asserting.
+- `docs/breaking-changes.md` (spec §6.2 major-version procedure) and
+  `docs/field-retirement.md` (spec §6.4) are unwritten. `docs/governance.md`
+  covers both at lower resolution.
+
+Resolved differently from the plan, not missing:
+
+- The CI publish step landed as `contracts:publish` plus the version gate rather
+  than a push on merge. Writing to `main` needs `contents: write` on a public
+  repo and fights branch protection; a committed baseline is reviewable in the
+  diff that changes it.
