@@ -3909,3 +3909,52 @@ resolves.
 `runGates` takes its meta as `{ info, components, security }`, which the emit
 script's own `buildDocument()` output supplies directly — no second copy of the
 metadata, same argument as the byte-identity test re-emitting through `./emit`.
+
+## Correction: importing `@ts-rest/core` does NOT require declaring `zod` here
+
+Directly contradicts the "@ts-rest/core's optional zod peer is a LIE at runtime"
+note above, which tells every consumer task to declare `zod` itself. That was
+true of a standalone package; it is **false in this workspace**, and following
+it adds a dependency nothing needs to `services/service-b` and both
+`apps/web-*`.
+
+The ESM build really does `import { z } from 'zod'` at module load. What the
+earlier note missed is *where that specifier resolves from*: bun's isolated
+linker satisfies the peer inside the **store entry**, not from the consumer's
+directory. The root `overrides.zod: 4.5.1` supplies it once, and every package
+in the workspace links the same peer-resolved copy:
+
+  services/service-b   import.meta.resolve('zod')  ERR_MODULE_NOT_FOUND
+  same package         initClient(contract, {...}) works, four operations bound
+
+All four packages that link `@ts-rest/core` (`contracts-service-a`,
+`contracts-service-b`, `service-a`, `service-b`) resolve to one store entry
+whose own `node_modules/` carries a `zod` symlink; only `service-a` declares
+`zod`, and that is for `config/env.ts` authoring a Zod schema — an ordinary
+import, not a peer.
+
+How to answer "which copy does this package get" for any peer question here,
+since the store entry name is the only place the answer is written down:
+
+  readlink <pkg>/node_modules/<dep>          -> ...+<peer-resolution-hash>
+  ls node_modules/.bun/<name>@<v>+<hash>/node_modules/   -> the resolved peers
+
+Two entries differing only by that hash are the same version resolved against
+different peer sets. Expect stale ones from earlier installs — check what
+actually links to an entry before reading it as a live second copy.
+
+## The negative control for "are this dependency's types real" is `satisfies`
+
+Sharpens the "prove a new dependency resolves, with a negative control" note
+above, whose two legs both fail the same way for different reasons. Deleting the
+import or misspelling the package gives **TS2307** — module not found — which a
+gate would also report if the types resolved to `any`. The leg that separates
+them asserts against a real export:
+
+  CARD_STATES satisfies readonly number[]   -> TS1360, naming the actual union
+
+TS1360 can only be produced by tsc having read the declared type, so it is the
+one leg that says the dependency's surface arrived rather than that the
+specifier did. Pair it with the undeclared-package leg, which must redden
+`check-types` (TS2307) **and** `lint` (`import/no-unresolved`) — those two
+cover different ground and a leaf can pass one while failing the other.

@@ -248,7 +248,7 @@ tomorrow's consumer, and that a pinned contract dependency is reviewable in
 exactly the same way whether the consumer is an app or a service.
 
 - [x] Add `packages/contracts-service-b/src/schemas/invoice.ts` defining the invoice schema with a payment state enum including an explicit `unknown` member, and `packages/contracts-service-b/src/contract.ts` declaring an operation returning the due invoice for a company
-- [ ] Add `packages/contracts-service-b/scripts/emit.ts`, run it, commit both `openapi/openapi.json` and `openapi/published/0.1.0.json`, and add a test asserting the emitted document passes every house rule and stays byte-identical to the committed artifact
+- [x] Add `packages/contracts-service-b/scripts/emit.ts`, run it, commit both `openapi/openapi.json` and `openapi/published/0.1.0.json`, and add a test asserting the emitted document passes every house rule and stays byte-identical to the committed artifact
 - [ ] Add `services/service-b/package.json` declaring `@marcos-corp/contracts-service-a` at the exact version `0.1.0` with no range specifier, alongside its own `@marcos-corp/contracts-service-b` dependency
 - [ ] Add `services/service-b/src/clients/serviceAClient.ts` building a ts-rest typed client from `@marcos-corp/contracts-service-a`, sending its own `client_id`, and tolerating unknown response fields, with colocated unit tests asserting an unknown field in a stubbed response does not cause a failure
 - [ ] Add `services/service-b/src/routes/` implementing the due-invoice operation, resolving company context through the `service-a` client, with colocated unit tests using a stubbed `service-a` response
