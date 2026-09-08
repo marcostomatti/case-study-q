@@ -233,7 +233,7 @@ contract schemas remain TypeBox.
 - [x] Add `services/service-a/src/mapping/dashboardMapper.ts` assembling the dashboard response from company, card, spend-limit and transaction rows, computing remaining spend as the limit minus the sum of settled transaction amounts, with colocated unit tests asserting the figures match the seeded `540000` of `1000000`
 - [x] Add `services/service-a/src/repositories/` query functions returning Drizzle row types for companies, cards, spend limits and transactions, with colocated unit tests run against a throwaway Postgres database
 - [x] Add `services/service-a/src/routes/` ts-rest route implementations for every operation declared in the contract, rejecting unknown request fields and returning the shared error schema on every error path
-- [ ] Add `services/service-a/src/server.ts` composing the env config, the client identity middleware, the usage logger and the ts-rest router into an Express application, exporting a factory so tests can bind an ephemeral port
+- [x] Add `services/service-a/src/server.ts` composing the env config, the client identity middleware, the usage logger and the ts-rest router into an Express application, exporting a factory so tests can bind an ephemeral port
 - [ ] Add an integration test in `services/service-a/` asserting a request without a `client_id` is rejected, a request carrying an unknown request field is rejected, a well-formed dashboard request returns a payload validating against the contract schema, and the transactions endpoint paginates across the seeded 57 transactions while the dashboard reports 54 further items
 
 Binding the test server to loopback on an ephemeral port avoids the port-steal

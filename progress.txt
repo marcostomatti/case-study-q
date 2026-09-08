@@ -3599,3 +3599,124 @@ which is the reading that separates "this line is defensive" from "this line is
 dead". Prefer `close()` alone; `closeAllConnections()` is the one to reach for
 only when in-flight requests may be abandoned, which a graceful shutdown must
 not do.
+
+## "Validates against the contract schema" needs ajv and the EMITTED document
+
+Follows the two notes above — `Value.Check` throwing on `Type.Unsafe`, and the
+`services/*` integration suites needing that claim anyway. Confirmed again on
+`@sinclair/typebox@0.34.52`: `Value.Check(Card, <a real card>)` throws `Unknown
+type` at the `state` field, while `Value.Check(Card, {})` returns **false** —
+so a suite that only checks a payload it expects to be invalid never reaches
+the throw and reads as though TypeBox works here.
+
+`services/service-a/src/testing/publishedContract.ts` is the answer, and
+`service-b`'s integration test should copy it rather than re-derive it. It
+exports `loadPublishedContract()`, `PUBLISHED_DOCUMENT_PATH`,
+`CONTRACT_CHECK_CANNOT_RUN`, `PublishedContract` and `ResponseCheck`.
+
+- **`ajv@^8` + `ajv-formats@^3` as leaf devDependencies**, imported as
+  `ajv/dist/2020` (JSON Schema 2020-12, the dialect OpenAPI 3.1 embeds). The
+  default import works under vitest with no `.default` unwrap. Without
+  `ajv-formats` a `format` is an unknown format and strict mode refuses; with
+  it, `date-time` and `uri` become real constraints.
+- **Compile against `openapi/openapi.json`, never the exported TypeBox
+  schemas.** The schemas inline the same `$id`-carrying object at several
+  positions, so ajv refuses with `reference "MonetaryAmount" resolves to more
+  than one schema`. `emitOpenApi` hoists each `$id` into `components.schemas`
+  and leaves a `$ref`, which is exactly the shape a validator wants.
+- **Register `{ components: { schemas } }` under an id and declare
+  `components` as a keyword** (`ajv.addKeyword({ keyword: 'components' })`).
+  That keeps `strict: true` — an unknown keyword *inside* a component schema
+  is still an error — where `strict: false` would switch that off wholesale.
+  Then compile `{ $ref: '<id>#/components/schemas/X' }`.
+- **Resolve the artifact through the dependency**, not by counting `../`:
+  `new URL('../openapi/openapi.json', import.meta.resolve('@marcos-corp/
+  contracts-service-a'))`. Verified under vitest — it resolves through bun's
+  isolated-linker symlink to the real path in `packages/`.
+- **Key on `operationId`, not on a component name.** Reading the `$ref` out of
+  `paths[...][method].responses[<status>].content['application/json'].schema`
+  ties the case to what the contract declares for that operation; a component
+  picked by hand passes just as quietly when it is the wrong one.
+
+Whether the committed document is itself current is **not** a claim this can
+make — `packages/contracts-*/scripts/emit.test.ts` owns byte identity, and a
+drifted artifact would validate payloads against fiction. Say so wherever the
+validator is used.
+
+## A payload validator needs a broken-payload case, or "valid" means nothing
+
+Same shape as the vacuum/oasdiff notes. Two mutations measured against
+`services/service-a`'s integration suite, each predicted by case name:
+
+  checkResponse always returns ok        1 red — only the broken-payload case
+  every operation resolves to `Error`    4 red — both validate cases, the
+                                          schema-ref case, AND the broken-
+                                          payload case (its assertion names
+                                          `/card/state`, which a root-level
+                                          complaint does not satisfy)
+
+The second is worth knowing before predicting: a control that asserts *which*
+field the validator objected to also reddens when the validator is pointed
+somewhere else entirely, which is a stronger case than "it said no".
+
+The validator also turns out to be the only gate that catches spec section
+2.5's absent-not-null convention end to end: making `cardMapper` emit
+`activatedAt: null` instead of omitting the key reddened the schema case and
+the card-fields case and nothing else.
+
+## An integration suite over a paginated list needs the page SIZES asserted
+
+Cost a vacuous control. A walk that collects every page and asserts "57
+distinct identifiers" passes against a provider that **ignores `limit`** and
+answers every page with all 57 rows — measured: pinning the repository's
+`.limit(limit)` to a constant reddened 2 of 19 cases, and the case written as
+the control for `limit` was not one of them. Adding
+`expect(pages.map((page) => page.items.length)).toEqual([...])` and
+`page.page.limit === size` made the same leg redden it.
+
+Two more legs from the same grid, both worth copying to any paged suite:
+
+- **Compare the concatenation against one unpaginated page.** 57 rows fit in
+  one request at `PAGE_LIMIT_MAX`, so the paged sequence has to equal it — a
+  row handed to two pages or skipped between them is invisible in any single
+  response and shows here.
+- **A tie-break is NOT reachable from a seeded end-to-end suite.** Dropping
+  `desc(transactions.id)` from the repository's order reddened **zero** cases,
+  because the seed books no two rows at the same instant.
+  `repositories/transactionRepository.test.ts` plants the ties and owns that
+  claim. Write the boundary into the case rather than letting the next reader
+  over-read it.
+
+## A refusal case's positive control can be aimed at a 404 instead of a write
+
+For any suite driving a state-changing operation it does not want to perform.
+`activateCard` validates its body **before** it looks anything up, so pointing
+the whole case at identifiers no row carries gives both halves for free: the
+body with an undeclared field is a `400`, and the same body without it is a
+`404` — which is the acceptance, because only a request that passed validation
+can reach a lookup. No second database, no second application, no ordering
+dependency between cases, and nothing to undo.
+
+Generalises: when the accepted form of a request would mutate, find the step
+*after* validation that can fail harmlessly and assert that instead.
+
+## `services/service-a` has an integration suite; `service-b` should mirror it
+
+`services/service-a/src/service.integration.test.ts` is the end-to-end suite —
+`createServiceApp` on an ephemeral loopback port against a migrated, seeded
+Postgres from `src/testing/seededDatabase.ts`, driven with `fetch`. 19 cases,
+and the shape `services/service-b`'s equivalent should copy:
+
+- **`now: () => SEED_NOW`.** The wall clock moves the spend window under the
+  suite; the seed measured every row back from that instant.
+- **The `MOBILE_VIEW` constant is restated, not imported**, and `SEED_FIGURES`
+  is asserted *against* it in its own case — so a seed edited to agree with a
+  changed implementation fails rather than passes. Copied from
+  `packages/db/src/seed.integration.test.ts`.
+- **The deployment is stood up on the version in the tree** and
+  `published.version` is asserted equal to it. `config/env.ts` keeps the two
+  independent on purpose, but validating payloads against a document some
+  other build published proves nothing.
+- **It needs no `Proxy` handle and asserts no `api_usage` row.** The real
+  database is behind it, and `server.test.ts` owns the telemetry and mount-
+  order claims — this one owns payloads.
