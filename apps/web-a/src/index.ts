@@ -22,4 +22,5 @@
  * no cross-team ceremony -- that contrast is what `@marcos-corp/web-b` is for.
  */
 
-export {};
+export { CLIENT_ID, fetchCompanies } from './dashboardClient';
+export type { CompanySelectorOptions } from './dashboardClient';

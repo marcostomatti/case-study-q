@@ -25,4 +25,11 @@
  * consumes, so its contract changes are reviewed through CODEOWNERS.
  */
 
-export {};
+export {
+  CLIENT_ID,
+  fetchDashboard,
+  toDashboardView,
+  toKnownCardState,
+  UNKNOWN_CARD_STATE,
+} from './dashboardClient';
+export type { DashboardClientOptions, DashboardView } from './dashboardClient';

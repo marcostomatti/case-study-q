@@ -18,5 +18,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "@marcos-corp/contracts-service-a": "0.1.0"
   }
 }

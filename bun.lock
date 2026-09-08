@@ -30,10 +30,16 @@
     "apps/web-a": {
       "name": "@marcos-corp/web-a",
       "version": "0.1.0",
+      "dependencies": {
+        "@marcos-corp/contracts-service-a": "0.1.0",
+      },
     },
     "apps/web-b": {
       "name": "@marcos-corp/web-b",
       "version": "0.1.0",
+      "dependencies": {
+        "@marcos-corp/contracts-service-a": "0.1.0",
+      },
     },
     "packages/contract-tooling": {
       "name": "@marcos-corp/contract-tooling",
