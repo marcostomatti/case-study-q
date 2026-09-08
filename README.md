@@ -52,8 +52,132 @@ Look [here](./PRESENTATION.md) for the presentation deliverable.
 
 ### Task 2: API Implementation
 
-Run it: `bun install && bun run demo:up`, then follow
-[`docs/demo-script.md`](./docs/demo-script.md).
+## Setup
+
+```bash
+git clone git@github.com:marcostomatti/case-study-q.git
+cd case-study-q
+bun install
+```
+
+That is enough to run **everything except the schema gates**. Two extra
+binaries and Docker unlock the rest:
+
+| Needed for | Install |
+| --- | --- |
+| The schema gates (`vacuum`, `oasdiff`) | `brew install daveshanley/vacuum/vacuum` and `brew tap oasdiff/homebrew-oasdiff && brew install oasdiff` |
+| The demo stack and the usage query | Docker Desktop running |
+
+Both binaries are single static Go files — no runtime, no service. CI installs
+the same pinned versions from
+[`.github/actions/gate-binaries`](./.github/actions/gate-binaries/action.yml);
+match them locally, because a newer `vacuum` reports rule violations CI does
+not.
+
+## Reproducing a green pipeline
+
+Two separate things, deliberately. **Hygiene** must be green on a bare checkout
+with nothing but `bun install`:
+
+```bash
+bun run lint:all && bun run check-types:all && bun run test:all && bun run gate:control-bytes
+```
+
+**The gates** are the cross-team schema governance, and are the only thing that
+needs the two binaries:
+
+```bash
+bun run test:gates:all     # do the house rules actually fire
+bun run pipeline:simulate  # emit -> lint -> diff -> dependency -> version -> pins
+```
+
+Expected tail:
+
+```text
+Pin gate — spec §2.2: exact versions, no ranges
+  PASS  @marcos-corp/web-a
+  PASS  @marcos-corp/web-b
+
+PASSED — every gate green.
+```
+
+No Docker, no database, no running service — the gates are static analysis over
+the emitted OpenAPI document. Measured at **0.54s with zero containers**.
+
+The full demo, which does need Docker:
+
+```bash
+bun run demo:up                                 # Postgres + Prism mock + service-a
+bun scripts/acceptance/04-usage-query.ts        # who called what, at which version
+docker compose -f docker/compose.yaml down -v   # teardown
+```
+
+## Reproducing a gate trigger
+
+Every gate below can be fired on demand. Each script mutates a tracked file,
+asserts the refusal, and **restores the file in a `finally`** — so the working
+tree is clean afterwards. Each also asserts the gates are green *before* it
+mutates, because a script that only checks the red passes just as happily
+against gates that reject everything.
+
+```bash
+bun scripts/acceptance/02-removal-is-blocked.ts            # gate 3, breaking change
+bun scripts/acceptance/03-db-derived-export-is-blocked.ts  # gate 4, db-derived schema
+bun scripts/acceptance/05-pin-bump-is-reviewable.ts        # pin gate, version range
+bun scripts/acceptance/01-consumer-adds-field.ts           # the control: additive PASSES
+```
+
+Expected from the removal script — note that it names the property and both
+operations it breaks:
+
+```text
+  OK    gates reject the removal
+  OK    the DIFF gate is what rejected it, not lint or emit
+  OK    the message names the removed field (`artUrl`)
+          response-required-property-removed (getCompanyDashboard): removed the
+          required property `card/artUrl` from the response with the `200` status
+```
+
+### Firing a gate by hand
+
+To see one outside a script, edit the contract and run the pipeline:
+
+```bash
+# Remove any property from packages/contracts-service-a/src/schemas/card.ts
+bun run pipeline:simulate     # FAIL diff — oasdiff names the break
+git checkout -- packages/contracts-service-a
+```
+
+The **version gate** is the one that makes an exact pin mean anything, and it
+fires on a change the other four accept:
+
+```bash
+# Add an optional field to packages/contracts-service-a/src/schemas/company.ts
+bun run --filter '@marcos-corp/contracts-service-a' contracts:emit
+bun run pipeline:simulate     # PASS diff (additive) but FAIL version
+git checkout -- packages/contracts-service-a
+```
+
+Additive, non-breaking, lints clean — and still refused, because the version
+stayed `0.1.0`. Without that gate the bytes published under a version can change
+while the version does not, and every consumer pinned there silently receives a
+contract it never reviewed.
+
+To ship that change properly:
+
+```bash
+# bump version in packages/contracts-service-a/package.json to 0.2.0
+bun run --filter '@marcos-corp/contracts-service-a' contracts:emit
+bun run pipeline:simulate            # green: diff is additive, version is higher
+bun run contracts:publish --write    # advance the baseline
+```
+
+Publish **after** the pipeline, never before — publishing first moves the
+baseline `oasdiff` compares against, and every change then looks non-breaking.
+
+---
+
+Walkthrough for a live demo: [`docs/demo-script.md`](./docs/demo-script.md).
 
 The implementation serves the Appendix 1 screen, but the thing being
 demonstrated is the *governance* around it: consumers author contract

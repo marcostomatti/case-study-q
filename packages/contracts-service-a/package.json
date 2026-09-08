@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "check-types": "tsc --noEmit",
     "test": "vitest run",
-    "contracts:emit": "bun scripts/emit.ts"
+    "contracts:emit": "bun scripts/emit.ts",
+    "test:gates": "vitest run --config vitest.gates.config.ts"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.52",

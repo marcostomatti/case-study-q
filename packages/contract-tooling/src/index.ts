@@ -4,9 +4,13 @@
  * `emitOpenApi` is gate 1, `lintSpec` gate 2, `diffSpecs` gate 3 and
  * `assertNoDbImport` gate 4 of the four blocking gates in spec section 8, and
  * `latestPublishedSpec` is what supplies `diffSpecs` with its base document.
- * `assertExactContractPins` sits beside those four rather than inside them: it
- * reads a consumer's manifest rather than a contract package, and CI runs it
- * as its own job.
+ * `assertExactContractPins` and `assertVersionBumped` sit beside those four
+ * rather than inside them. The pin gate reads a CONSUMER's manifest rather than
+ * a contract package. The version gate reads a contract package's manifest
+ * against its published baseline, and it is what makes an exact pin mean
+ * anything: without it the bytes published under a version can change while the
+ * version does not, and every consumer pinned there silently receives a
+ * contract it never reviewed.
  *
  * `runGates` composes the four in spec section 8's order and is what a caller
  * should reach for. Calling them individually is fine for a one-off, but the
@@ -62,3 +66,5 @@ export { HOUSE_RULESET_PATH, lintSpec, SPEC_PARSE_FAILED } from './lint';
 export type { PinFinding, PinViolationReason } from './pinCheck';
 export { assertExactContractPins, CONTRACT_PACKAGE_PREFIX } from './pinCheck';
 export { latestPublishedSpec } from './publishedBaseline';
+export type { VersionFinding, VersionViolationReason } from './versionCheck';
+export { assertVersionBumped, publishedBaselinePath } from './versionCheck';

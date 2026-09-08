@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 // Colocated suites only, including `src/gates.integration.test.ts`.
 //
@@ -9,9 +9,15 @@ import { defineConfig } from 'vitest/config';
 // was rejected on purpose — a stub proves a suite parses its own fixtures,
 // not that the house rules fire or that oasdiff classifies an edit the way the
 // governance story claims.
+// `*.gate.test.ts` is EXCLUDED here and runs under `bun run test:gates`.
+// Those suites shell out to the real vacuum and oasdiff, so collecting them
+// here would make this package's `test` script require two binaries to be
+// installed — and this script is the one that must be green on a bare
+// checkout with nothing but `bun install`.
 export default defineConfig({
   test: {
     environment: 'node',
+    exclude: [...configDefaults.exclude, '**/*.gate.test.ts'],
     include: ['src/**/*.test.ts'],
   },
 });

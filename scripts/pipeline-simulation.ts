@@ -27,7 +27,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { runGates, assertExactContractPins, type GateReport } from '@marcos-corp/contract-tooling';
+import {
+  assertExactContractPins,
+  assertVersionBumped,
+  runGates,
+  type GateReport,
+} from '@marcos-corp/contract-tooling';
 
 import { consumingPackages, contractPackages, type ContractPackage } from './contractPackages';
 
@@ -93,7 +98,7 @@ function renderReport(report: GateReport): void {
 }
 
 async function main(): Promise<number> {
-  console.log('Contract gates — spec §8 order: emit -> lint -> diff -> dependency');
+  console.log('Contract gates — spec §8 order: emit -> lint -> diff -> dependency, then version');
 
   const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-simulation-'));
   let failed = false;
@@ -132,6 +137,18 @@ async function main(): Promise<number> {
 
       renderReport(report);
       if (!report.ok) failed = true;
+
+      // Gate 5, outside runGates because it reads the manifest rather than the
+      // document. It is what stops the bytes under a published version from
+      // changing while the version does not.
+      const versionFindings = assertVersionBumped(pkg.dir, fs.readFileSync(emitted.specPath, 'utf8'));
+      if (versionFindings.length === 0) {
+        console.log(`${PASS}  version    the declared version is publishable`);
+      } else {
+        failed = true;
+        console.log(`${FAIL}  version    ${pkg.name} may not ship at ${pkg.version}`);
+        for (const finding of versionFindings) console.log(`          ${finding.message}`);
+      }
     }
   } finally {
     fs.rmSync(scratchDir, { recursive: true, force: true });

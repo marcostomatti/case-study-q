@@ -27,7 +27,9 @@
     "gate:control-bytes": "bun tools/control-byte-gate/control-byte-gate.ts",
     "ralph": "bun tools/ralph/ralph.ts",
     "pipeline:simulate": "bun scripts/pipeline-simulation.ts",
-    "demo:up": "bun scripts/demo.ts"
+    "demo:up": "bun scripts/demo.ts",
+    "test:gates:all": "bun run --filter '@marcos-corp/*' test:gates",
+    "contracts:publish": "bun scripts/publish-contracts.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
