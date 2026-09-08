@@ -62,7 +62,8 @@ export const DEMO_CONSUMERS: readonly RegisteredConsumer[] = [
 ];
 
 function sha256(value: string): string {
-  return createHash('sha256').update(value, 'utf8').digest('hex');
+  return createHash('sha256').update(value, 'utf8')
+    .digest('hex');
 }
 
 async function main(): Promise<void> {
