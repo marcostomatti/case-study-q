@@ -3059,3 +3059,74 @@ category code the seed inserts classifies is what stops a later edit to a
 lookup table from rendering the demo's transaction list as a column of
 `unknown`. Pair it with the control the shape needs — the seed built a non-zero
 number of rows — or an empty result list is a statement about nothing.
+
+## `buildSeedRows` hands back INSERT rows; a mapper suite needs SELECT rows
+
+`packages/db`'s seed is the right fixture source for anything downstream of the
+mapping layer — the repositories' suites, `service-b`'s due-invoice test,
+acceptance script 04 — but `SeedRows` carries `NewCompany` / `NewCard` /
+`NewTransaction`, whose generated columns are **optional in the type** and whose
+nullable ones arrive absent rather than `null`. Every mapper takes the select
+type, where `id` is a `string` and `activatedAt` is `Date | null`.
+
+Convert with a function that *asserts* the generated column is there rather
+than casting it away:
+
+    function asCardRow(row: NewCard): CardRow {
+      const { id } = row;
+      if (id === undefined) throw new Error('the seed must fix the card id');
+      return { ...row, id, activatedAt: row.activatedAt ?? null };
+    }
+
+An `as CardRow` cast compiles and hands the mapper an `undefined` id, which
+then surfaces as a wrong *value* in some later assertion rather than as the
+wrong shape it is. `NewSpendLimit` is the one that needs no conversion:
+`spend_limits` has no generated column, so its insert and select types
+coincide.
+
+## A defensive clamp hides WHICH of two derivations a function used
+
+General to any figure computed one way and floored or capped another, and it
+cost a mutation leg that reddened nothing here. `Math.max(0, total - listed)`
+and `Math.max(0, total - CEILING)` agree on every input where
+`listed === CEILING` **or** the difference is negative — which is most of a
+plausible case list, so the naive-implementation mutation stays green and the
+clamp reads as covered.
+
+The discriminating case has to sit where the clamp is inactive *and* the two
+derivations differ: `listed < CEILING` **and** `total > CEILING`. Measured: with
+only the obvious cases the "derive from the ceiling" leg reddened 0 of 31;
+adding one case (2 listed, 10 in total, expects 8) made it redden exactly 1 of
+32. Ask which region a clamp switches off in before believing a guard's cases.
+
+## `dashboardMapper.ts` owns the two figures no column holds
+
+`services/service-a/src/mapping/dashboardMapper.ts` exports `toDashboard`,
+`settledSpendMinorUnits`, `toCompanySummary` and `DashboardSources`, all
+re-exported from the package's `src/index.ts`. The repositories, the routes and
+`listCompanies` should call these rather than re-deriving either figure or
+growing a second spelling of the `companies` fold.
+
+- **Both filters that decide what counts against the cap live in the mapper**,
+  not in the caller's query, so the figure does not depend on how the
+  repository scoped its read — a caller may hand over the window or the whole
+  collection. The settlement test keys on the *database* state (`settled`),
+  never on the contract's folded one: the clearing cycle is the provider's
+  vocabulary, and a later decision to publish `disputed` differently must not
+  move the meter.
+- **The seed's three wrong answers are reachable through a mapper, measured.**
+  Dropping the settlement filter (7 red), dropping the window filter (4) and
+  taking the magnitude of the refund (4) each reddened their own fixture case
+  plus the three seeded ones, total holding at 32. That is what makes `540000`
+  a reading rather than a coincidence — and it is the payoff for the seed being
+  built non-uniform in the first place.
+- **`latestTransactions` is sorted here**, on a copy and stably, rather than
+  trusted from the caller. `Dashboard` publishes "newest first" and this is the
+  function that produces that payload, so holding the order is cheaper than a
+  precondition every caller has to remember.
+- **Four rows fetched under four separate keys are checked to belong together**
+  before anything is assembled (`card.companyId === company.id`,
+  `spendLimit.cardId === card.id`), and a mismatch throws the way
+  `resolveCardArtUrl` throws on a bad base. Nothing else in the request path
+  checks it, and one card's spend measured against another card's cap is a
+  number that looks entirely plausible on the screen.

@@ -6,7 +6,9 @@
  * `auth/clientIdentity.ts`, the consumer identity spec section 2.3 requires on
  * every request, `telemetry/usageLogger.ts`, the `api_usage` row it writes for
  * each one, and `mapping/`, the Drizzle-row-to-contract translation that keeps
- * the database schema out of the published payloads. Still to come and wired
+ * the database schema out of the published payloads — including
+ * `dashboardMapper.ts`, which assembles the mobile view's whole payload and
+ * computes the two figures on it that no column holds. Still to come and wired
  * in here as they arrive: the repositories, the ts-rest routes and the Express
  * `server.ts` factory. `bun run dev` runs this file, so it becomes the process
  * entrypoint once `server.ts` exists.
@@ -65,6 +67,12 @@ export {
   toContractCardState,
 } from './mapping/cardMapper';
 export type { CardMappingOptions } from './mapping/cardMapper';
+export {
+  settledSpendMinorUnits,
+  toCompanySummary,
+  toDashboard,
+} from './mapping/dashboardMapper';
+export type { DashboardSources } from './mapping/dashboardMapper';
 export {
   MERCHANT_CATEGORY_RANGES,
   toContractMerchantCategory,
