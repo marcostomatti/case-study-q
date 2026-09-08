@@ -2189,3 +2189,134 @@ The mirror-image leg is worth keeping too: `Type.Union([Type.Literal(...)])`
 leaves the TypeScript union intact and drops the `enum` keyword, so
 `check-types` stays green and the JSON cases redden. Neither suite can make the
 other's claim.
+
+## zod 4 silently destroys `c.router()`'s types — do not call it, use `satisfies AppRouter`
+
+The single most consequential finding for every remaining ts-rest task
+(`contracts-service-b/src/contract.ts`, `service-a`'s routes, `service-b`'s
+client, both `apps/web-*` clients). Measured on `@ts-rest/core@3.52.1` and
+TypeScript 5.9.3, with controls in a throwaway workspace.
+
+This repo's root `overrides.zod: 4.5.1` is a version ts-rest v3 was never typed
+against — its declared peer is `zod: ^3.22.3`. Under zod 4, `c.router()` returns
+a route type carrying an `[x: string]: any` index signature, so
+`typeof contract.<route>` no longer satisfies `AppRoute` and every ts-rest
+inference helper falls through to its *router* branch:
+
+  ServerInferRequest<...>     -> { [x: string]: any; method: never; body: never }
+  ClientInferResponseBody<...> -> any
+
+Both are silent. A consumer pinning the package gets no types at all, and every
+`expectTypeOf` assertion about them passes **vacuously** — `any` satisfies
+`toEqualTypeOf` in both directions.
+
+Controls, each run and each decisive:
+  zod 3.25.76 + `c.router()` + zod schemas    -> correct types
+  zod 3.25.76 + `c.router()` + `c.type<T>()`  -> correct types
+  zod 4.5.1   + `c.router()` + either         -> degraded, as above
+So it is the zod version, not TypeBox and not the adapter below.
+
+**The fix is to skip `c.router()`.** A plain object literal closed with
+`satisfies AppRouter` keeps every literal type and was verified to carry full
+types through `initClient` *and* through `@ts-rest/express`'s
+`initServer().router()` under zod 4 (`params`/`body` both inferred). What it
+costs is the `commonResponses` router option, which an ordinary spread of a
+shared `{ 401, 500 }` constant replaces. What it buys, beyond the types:
+
+- `c.router()` is the only runtime import of `@ts-rest/core` a contract module
+  needs, so dropping it makes the package's runtime graph **zod-free** — no
+  `zod` dependency, contrary to the "@ts-rest/core's optional zod peer is a
+  LIE" note above, which still holds for anything that *does* import it.
+- ts-rest's `recursivelyApplyOptions` adds `headers: {}` to every route; without
+  it `route.headers` is absent. Harmless on all three consumers checked:
+  `emitOpenApi` returns no parameters for `undefined`, and `@ts-rest/express`
+  runs `checkZodSchema(req.headers, undefined)` which short-circuits to success.
+
+If a later task would rather have `c.router()` back, the other fix is changing
+the root override to zod 3 and `contract-tooling`'s `zod: ^4.5.1` with it —
+nothing in the repo imports zod, it is declared only to satisfy the peer.
+
+## Handing a TypeBox schema to ts-rest: `contractSchema`, and why both halves need a suite
+
+`packages/contracts-service-a/src/contract.ts` defines it and
+`contracts-service-b` will need its own copy (six lines; two independently
+versioned contract packages should not share a runtime helper):
+
+    function contractSchema<Schema extends TSchema>(
+      schema: Schema,
+    ): ContractPlainType<Static<Schema>> {
+      return schema as unknown as ContractPlainType<Static<Schema>>;
+    }
+
+ts-rest types every schema slot as `ContractAnyType` — a zod schema,
+`c.type<T>()`'s opaque marker, or `null`. A TypeBox schema is none of them, so
+passing one straight through is a `check-types` failure whose message names 46
+missing zod members and points nowhere useful. `c.type<T>()` compiles and is a
+bare symbol at runtime (gate 1 refuses it, reason `compile-time-type`). The cast
+above is the only form that keeps the runtime schema *and* the consumer's type.
+
+Because it is a cast, neither suite alone is evidence:
+
+- `contract.test.ts` asserts the runtime value with `toBe` against the exported
+  schema. Proven by six legs, each reddening exactly its predicted cases with
+  the total holding at 18.
+- `contract.test-d.ts` asserts `ClientInferResponseBody` / `ServerInferRequest`.
+  Proven by six legs; the one that matters is rewriting the helper's return type
+  to `ContractPlainType<unknown>`, which reddens 14 type cases and **zero**
+  runtime cases.
+
+One trap that cost a leg: `expectTypeOf<ServerInferRequest<R>['body']>()
+.toEqualTypeOf<ActivateCardRequest>()` compares a derived type against the type
+it is derived from, so renaming the field in the schema renames both sides and
+the case stays green. Pin the shape literally as well
+(`toEqualTypeOf<{ confirmedLastFour: string }>()`). Skill:
+`convert-exactly-one-spelling`.
+
+## OpenAPI ignores an `Authorization` header *parameter* — credentials are a securityScheme
+
+Decided while authoring the contract, and it binds the emit-metadata task, both
+`contracts-*` packages and `service-a`'s auth middleware. OpenAPI 3.x states
+that a header parameter named `Authorization`, `Accept` or `Content-Type` SHALL
+be ignored. So a route that declares one publishes a requirement no tool reads —
+worse than declaring nothing, because it looks covered.
+
+The contract therefore declares no credential header. What it states about
+spec 2.3 is the `401` every operation carries; the credential itself belongs in
+the emitted document's `securitySchemes`, supplied through `emitOpenApi`'s
+`meta`. Note the spec wording is "a `client_id` **derived from** credentials" —
+the consumer presents a credential and the provider resolves it, so `client_id`
+is never a request field a consumer sends.
+
+## `packages/contracts-service-a/src/contract.ts` is the published contract; import from `src/index.ts`
+
+Four operations, flat router, keys are the operationIds `emitOpenApi` derives
+and `api_usage` records: `listCompanies`, `getCompanyDashboard`,
+`listCompanyTransactions`, `activateCard`. The module also owns the three shapes
+that are an operation's own rather than a schema module's — `CompanyList`,
+`TransactionList` and `ActivateCardRequest`, each carrying an `$id` per the
+third case of the `$id` convention. All are re-exported from `src/index.ts`,
+which is what `services/service-a`, `services/service-b` and both `apps/web-*`
+should import.
+
+Conventions it sets that `contracts-service-b` should follow rather than
+re-derive, each argued in the module:
+
+- **Error statuses are declared, never inferred.** `401` and `500` come from a
+  spread of one `UNIVERSAL_FAILURES` constant; a route adds `400` where it takes
+  input, `404` where it addresses something, `409` where state can conflict.
+  No `403` (the catalogue folds "not yours to see" onto `not_found`) and no
+  `429` (the catalogue has no code a consumer could branch on).
+- **Every list is paginated, including the short one.** A list with no ceiling
+  in the contract is an unbounded query in the provider.
+- **A state change is a POST to a noun.** `POST /companies/:companyId/cards/
+  :cardId/activation` answering `200` with the updated card, and `409` rather
+  than a silent success on a second activation.
+
+Verified end to end before commit, since the emit and house-rule tests land two
+tasks later: `emitOpenApi` produces the four operations and ten components, and
+`vacuum spectral-report` against the house ruleset reports **zero** findings.
+Paired with five mutations of the emitted document — dropping an enum's
+`unknown`, deleting an `additionalProperties`, dropping an `operationId`,
+pointing an error response at a lookalike schema, making a field nullable —
+each of which reported exactly its own rule code. A clean run without those is
+indistinguishable from a ruleset that read nothing.

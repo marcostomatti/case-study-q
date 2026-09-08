@@ -1,13 +1,17 @@
 /**
  * Public surface of `@marcos-corp/contracts-service-a`.
  *
- * What has landed so far: the TypeBox primitives every operation reuses
- * (`./schemas/shared`), the shared error payload every error response
- * references (`./schemas/error`), the company the selector lists
- * (`./schemas/company`), the card the screen renders (`./schemas/card`), a
- * transaction row (`./schemas/transaction`) and the aggregated dashboard
- * payload (`./schemas/dashboard`). The ts-rest contract that exposes them lands
- * in a later task and is re-exported here when it does.
+ * The contract itself is `./contract`: four operations over the TypeBox
+ * primitives every operation reuses (`./schemas/shared`), the shared error
+ * payload every error response references (`./schemas/error`), the company the
+ * selector lists (`./schemas/company`), the card the screen renders
+ * (`./schemas/card`), a transaction row (`./schemas/transaction`) and the
+ * aggregated dashboard payload (`./schemas/dashboard`).
+ *
+ * A consumer needs `contract` and the types; a provider needs the same
+ * `contract` and the schemas to validate against. Both come from here, which is
+ * the property that makes the two sides provably the same API rather than two
+ * descriptions of one.
  *
  * Consumers import their types from this module rather than from a generator —
  * spec §5's "types for consumers: from the contract package". Each schema is
@@ -25,6 +29,12 @@
  *   consumer rather than an implicit upgrade.
  */
 
+export {
+  ActivateCardRequest,
+  CompanyList,
+  contract,
+  TransactionList,
+} from './contract';
 export {
   CARD_STATES,
   Card,
