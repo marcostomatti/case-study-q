@@ -345,10 +345,47 @@ that control, "CI blocked it" passes just as happily against gates that reject
 everything — and that control caught two real bugs during development, both
 invisible to the red half of the check.
 
-**Deliberately not built:** a schema registry, Pact, generated SDKs, an API
-review board. Each has a written trigger in
-[`docs/governance.md`](./docs/governance.md), and none has fired. Tier 3 may
-never be needed for a pure TypeScript stack — a pinned contract package plus
-these gates covers what a registry would. Adopting it early costs coordination,
-buys nothing, and makes the whole system look like bureaucracy, which poisons it
-for when it is actually needed.
+## What is not built
+
+Two different categories, and they should be read differently.
+
+### Deliberately deferred, with triggers
+
+A schema registry, Pact, generated SDKs, an API review board. Each has a written
+trigger in [`docs/governance.md`](./docs/governance.md), and none has fired.
+Tier 3 may never be needed for a pure TypeScript stack — a pinned contract
+package plus these gates covers what a registry would. Adopting any of them
+early costs coordination, buys nothing, and makes the whole system look like
+bureaucracy, which poisons it for when it is actually needed.
+
+These are design decisions, not gaps.
+
+### Planned but unbuilt
+
+Six tasks from the plan did not land inside the time budget. None blocks the
+demo; each is recorded in `progress.txt` and in the plan tracker with what its
+absence costs.
+
+| Gap | What it costs |
+| --- | --- |
+| **`service-b` has no routes and no server** | It is a consumer in fact and a provider only on paper. The invoice contract is published and gated like any other, but nothing answers it — so the `Invoice due` banner is the one element of the mobile view with no live endpoint. See [`services/service-b/README.md`](./services/service-b/README.md). |
+| No integration test for that endpoint | Follows from the above. |
+| `pipeline-simulation.ts` has no test of its own | The acceptance scripts cover the gates it runs, not its own reporting; a change breaking its output would be invisible. |
+| Nothing asserts the acceptance scripts' exit codes | They are verified by hand and in CI, but one that silently stopped asserting would not be caught. |
+| `docs/breaking-changes.md` (spec §6.2) unwritten | [`docs/governance.md`](./docs/governance.md) covers the major-version procedure at lower resolution. |
+| `docs/field-retirement.md` (spec §6.4) unwritten | Same — the retirement flow is described, not detailed. |
+
+**The `service-b` gap is the one worth knowing about.** What it does *not*
+undermine is the governance claim the package exists to make: it pins the
+contract exactly, presents its own `client_id`, tolerates unknown fields, and
+its client answers against both the real service and the mock. Every one of
+those is demonstrated by an acceptance script. What is missing is an
+implementation of its own operation — which is application code, not governance
+machinery.
+
+One task landed **differently** from the plan rather than not at all: the CI
+publish step is `bun run contracts:publish` plus the version gate, not a push on
+merge to `main`. Writing to `main` from a workflow needs `contents: write` on a
+public repository and fights branch protection, and a committed baseline is
+reviewable in the diff that changes it — the same argument that makes the pin
+worth having.
