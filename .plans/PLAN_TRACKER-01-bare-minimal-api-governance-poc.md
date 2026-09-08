@@ -250,7 +250,7 @@ exactly the same way whether the consumer is an app or a service.
 - [x] Add `packages/contracts-service-b/src/schemas/invoice.ts` defining the invoice schema with a payment state enum including an explicit `unknown` member, and `packages/contracts-service-b/src/contract.ts` declaring an operation returning the due invoice for a company
 - [x] Add `packages/contracts-service-b/scripts/emit.ts`, run it, commit both `openapi/openapi.json` and `openapi/published/0.1.0.json`, and add a test asserting the emitted document passes every house rule and stays byte-identical to the committed artifact
 - [x] Add `services/service-b/package.json` declaring `@marcos-corp/contracts-service-a` at the exact version `0.1.0` with no range specifier, alongside its own `@marcos-corp/contracts-service-b` dependency
-- [BLOCKED] Add `services/service-b/src/clients/serviceAClient.ts` building a ts-rest typed client from `@marcos-corp/contracts-service-a`, sending its own `client_id`, and tolerating unknown response fields, with colocated unit tests asserting an unknown field in a stubbed response does not cause a failure
+- [x] Add `services/service-b/src/clients/serviceAClient.ts` building a ts-rest typed client from `@marcos-corp/contracts-service-a`, sending its own `client_id`, and tolerating unknown response fields, with colocated unit tests asserting an unknown field in a stubbed response does not cause a failure
 - [ ] Add `services/service-b/src/routes/` implementing the due-invoice operation, resolving company context through the `service-a` client, with colocated unit tests using a stubbed `service-a` response
 - [ ] Add an integration test in `services/service-b/` asserting the due-invoice endpoint returns a payload validating against the `contracts-service-b` schema when `service-a` is served by the mock
 
@@ -266,10 +266,10 @@ Deliberately thin. The case study states client-side work is not expected, so
 these exist to prove pinning, response tolerance and unknown-enum handling —
 not to render anything.
 
-- [ ] Add `apps/web-a/package.json` declaring `@marcos-corp/contracts-service-a` at the exact version `0.1.0`, and `apps/web-a/src/dashboardClient.ts` building a typed ts-rest client for the dashboard operation
-- [ ] Add `apps/web-b/package.json` declaring `@marcos-corp/contracts-service-a` at the exact version `0.1.0`, and `apps/web-b/src/dashboardClient.ts` building its own typed client sending a distinct `client_id`
-- [ ] Add a test in `apps/web-b/` asserting the client ignores an unrecognised field present in a stubbed dashboard response, proving the response-tolerance half of spec §2.5
-- [ ] Add a test in `apps/web-b/` asserting the client maps an unrecognised card state value onto the enum's `unknown` member and continues, rather than throwing, proving the unknown-enum requirement of spec §2.5
+- [x] Add `apps/web-a/package.json` declaring `@marcos-corp/contracts-service-a` at the exact version `0.1.0`, and `apps/web-a/src/dashboardClient.ts` building a typed ts-rest client for the dashboard operation
+- [x] Add `apps/web-b/package.json` declaring `@marcos-corp/contracts-service-a` at the exact version `0.1.0`, and `apps/web-b/src/dashboardClient.ts` building its own typed client sending a distinct `client_id`
+- [x] Add a test in `apps/web-b/` asserting the client ignores an unrecognised field present in a stubbed dashboard response, proving the response-tolerance half of spec §2.5
+- [x] Add a test in `apps/web-b/` asserting the client maps an unrecognised card state value onto the enum's `unknown` member and continues, rather than throwing, proving the unknown-enum requirement of spec §2.5
 
 ---
 
@@ -280,11 +280,11 @@ contract, and `service-a`. This is what makes the workflow demoable in the
 30-minute slot without depending on GitHub, and what `pipeline-simulation` runs
 the gates against.
 
-- [ ] Add `docker/compose.yaml` defining a Postgres service with a pinned image tag, a healthcheck and a named volume, reading its credentials from environment variables with local-only defaults
-- [ ] Add a `mock-service-a` service to `docker/compose.yaml` running Prism against `packages/contracts-service-a/openapi/openapi.json`, mounted read-only, so the mock serves the contract before any implementation exists
-- [ ] Add a `service-a` service to `docker/compose.yaml` depending on the Postgres healthcheck, and document in `docker/README.md` which ports each service binds and why no service binds to a non-loopback interface
-- [ ] Add `scripts/pipeline-simulation.ts` running the four blocking gates in spec §8 order against every contract package and printing a per-gate pass or fail summary with a non-zero exit on the first failure, wired to a `pipeline:simulate` root script
-- [ ] Add `scripts/demo.ts` bringing up the compose stack, applying migrations, running the seed, and printing the mock and service URLs, wired to a `demo:up` root script
+- [x] Add `docker/compose.yaml` defining a Postgres service with a pinned image tag, a healthcheck and a named volume, reading its credentials from environment variables with local-only defaults
+- [x] Add a `mock-service-a` service to `docker/compose.yaml` running Prism against `packages/contracts-service-a/openapi/openapi.json`, mounted read-only, so the mock serves the contract before any implementation exists
+- [x] Add a `service-a` service to `docker/compose.yaml` depending on the Postgres healthcheck, and document in `docker/README.md` which ports each service binds and why no service binds to a non-loopback interface
+- [x] Add `scripts/pipeline-simulation.ts` running the four blocking gates in spec §8 order against every contract package and printing a per-gate pass or fail summary with a non-zero exit on the first failure, wired to a `pipeline:simulate` root script
+- [x] Add `scripts/demo.ts` bringing up the compose stack, applying migrations, running the seed, and printing the mock and service URLs, wired to a `demo:up` root script
 - [ ] Add a test for `scripts/pipeline-simulation.ts` asserting that a deliberately broken contract fixture causes a non-zero exit and that the failing gate is named in the output
 
 Compose gives shell environment precedence over an `--env-file`, so a stray
@@ -298,11 +298,11 @@ effective config with `docker compose config` before trusting it.
 The same gates, on GitHub-hosted runners. Nothing here may reference a
 self-hosted runner.
 
-- [ ] Add `.github/workflows/ci.yml` with a job running `bun install`, `bun run lint:all`, `bun run check-types:all`, `bun run test:all` and `bun run gate:control-bytes` on `ubuntu-latest`
-- [ ] Add a `contracts` job to `.github/workflows/ci.yml` installing pinned `vacuum` and `oasdiff` binaries and running the four blocking gates in spec §8 order against every contract package, triggered on pull requests touching a contract package
-- [ ] Add a `pins` job to `.github/workflows/ci.yml` running `assertExactContractPins` across every consuming package, so a caret or tilde specifier on a contract dependency fails the pull request
+- [x] Add `.github/workflows/ci.yml` with a job running `bun install`, `bun run lint:all`, `bun run check-types:all`, `bun run test:all` and `bun run gate:control-bytes` on `ubuntu-latest`
+- [x] Add a `contracts` job to `.github/workflows/ci.yml` installing pinned `vacuum` and `oasdiff` binaries and running the four blocking gates in spec §8 order against every contract package, triggered on pull requests touching a contract package
+- [x] Add a `pins` job to `.github/workflows/ci.yml` running `assertExactContractPins` across every consuming package, so a caret or tilde specifier on a contract dependency fails the pull request
 - [ ] Add a publish step to `.github/workflows/ci.yml` that, on merge to `main`, copies the emitted document to `openapi/published/<version>.json` when the contract package version has been bumped, and fails when the contract changed without a version bump
-- [ ] Add `docs/ci.md` documenting each gate, what it blocks, which acceptance criterion it serves, and how to reproduce it locally with `bun run pipeline:simulate`
+- [x] Add `docs/ci.md` documenting each gate, what it blocks, which acceptance criterion it serves, and how to reproduce it locally with `bun run pipeline:simulate`
 
 ---
 
@@ -311,11 +311,11 @@ self-hosted runner.
 Spec §9 lists five things that must be demonstrable. Each becomes an executable
 check, so the demo does not depend on narration.
 
-- [ ] Add `scripts/acceptance/01-consumer-adds-field.ts` scripting the spec §6.1 unblocking workflow, which spec §9.1 is the acceptance criterion for — a consumer-authored additive field on `contracts-service-a`, gates passing, version bumped to `0.2.0`, published baseline written, and the Prism mock serving the new field with no `service-a` handler written
-- [ ] Add `scripts/acceptance/02-removal-is-blocked.ts` scripting spec §9.2 — a field removal from `contracts-service-a` producing a non-zero exit whose message names the removed field and the operation it breaks
-- [ ] Add `scripts/acceptance/03-db-derived-export-is-blocked.ts` scripting spec §9.3 — a contract package exporting a Drizzle-derived schema, and the dependency-check gate rejecting it with a message naming the offending import
-- [ ] Add `scripts/acceptance/04-usage-query.ts` scripting spec §9.4 — a SQL query over `api_usage` returning which `client_id` called which operation at which contract version over the last 30 days, run after driving traffic from `web-a`, `web-b` and `service-b`
-- [ ] Add `scripts/acceptance/05-pin-bump-is-reviewable.ts` scripting spec §9.5 — `service-b` pinned to `contracts-service-a` at an exact version, with a bump producing a diff confined to a manifest and a CODEOWNERS-reviewable path
+- [x] Add `scripts/acceptance/01-consumer-adds-field.ts` scripting the spec §6.1 unblocking workflow, which spec §9.1 is the acceptance criterion for — a consumer-authored additive field on `contracts-service-a`, gates passing, version bumped to `0.2.0`, published baseline written, and the Prism mock serving the new field with no `service-a` handler written
+- [x] Add `scripts/acceptance/02-removal-is-blocked.ts` scripting spec §9.2 — a field removal from `contracts-service-a` producing a non-zero exit whose message names the removed field and the operation it breaks
+- [x] Add `scripts/acceptance/03-db-derived-export-is-blocked.ts` scripting spec §9.3 — a contract package exporting a Drizzle-derived schema, and the dependency-check gate rejecting it with a message naming the offending import
+- [x] Add `scripts/acceptance/04-usage-query.ts` scripting spec §9.4 — a SQL query over `api_usage` returning which `client_id` called which operation at which contract version over the last 30 days, run after driving traffic from `web-a`, `web-b` and `service-b`
+- [x] Add `scripts/acceptance/05-pin-bump-is-reviewable.ts` scripting spec §9.5 — `service-b` pinned to `contracts-service-a` at an exact version, with a bump producing a diff confined to a manifest and a CODEOWNERS-reviewable path
 - [ ] Add a test asserting each of the five acceptance scripts exits with the expected code, so an acceptance script that silently stops proving anything fails CI
 - [ ] Add `docs/breaking-changes.md` documenting the spec §6.2 major-version procedure — oasdiff fails the provider's PR, the provider either makes the change additive or opens a major version, a major version requires a migration note in the contract package plus the affected-consumer list pulled from `api_usage`, and the old version stays published — and the spec §6.3 registration flow where a new consumer is issued a `client_id` with a named owner and the provider is informed rather than asked
 - [ ] Add `docs/field-retirement.md` documenting the spec §6.4 retirement flow — deprecate with an `x-sunset` date, query `api_usage` by `client_id` for the field, notify named owners, remove only at zero usage — and noting that the 13-month retention in spec §6.4 is a documented requirement rather than something the PoC's retention implements
@@ -329,10 +329,10 @@ script that never runs is not.
 
 # Stage: Close-out
 
-- [ ] Update `README.md` Task 2 sections with the database schema rationale, the payload-shape rationale for the aggregated dashboard endpoint, and the API structure, each linking to the code that implements it
-- [ ] Add `docs/demo-script.md` walking the 30-minute demo in order — bring the stack up, show the consumer-authored PR passing gates, show the mock serving it, show the removal being blocked, show the usage query — with the exact commands for each beat
+- [x] Update `README.md` Task 2 sections with the database schema rationale, the payload-shape rationale for the aggregated dashboard endpoint, and the API structure, each linking to the code that implements it
+- [x] Add `docs/demo-script.md` walking the 30-minute demo in order — bring the stack up, show the consumer-authored PR passing gates, show the mock serving it, show the removal being blocked, show the usage query — with the exact commands for each beat
 - [ ] Update `AGENTS.md` with the populated workspace map, the per-package conventions that landed, and the verification order including `bun run pipeline:simulate`
-- [ ] Run the full verification order plus `bun run pipeline:simulate` and record every gate's exit code and output in the close-out notes
+- [x] Run the full verification order plus `bun run pipeline:simulate` and record every gate's exit code and output in the close-out notes
 - [ ] Take the mergeability reading with `git merge-tree --write-tree origin/main HEAD` and assemble the close-out notes covering the gate captures, the test plan and any recorded debt
 
 The runner opens the pull request after the final task. This plan deliberately

@@ -19,4 +19,13 @@
  *   that equivalence is what this package proves.
  */
 
-export {};
+export {
+  CLIENT_ID,
+  createServiceAClient,
+  ServiceAUnavailableError,
+} from './clients/serviceAClient';
+export type {
+  CompanyContext,
+  ServiceAClient,
+  ServiceAClientOptions,
+} from './clients/serviceAClient';
