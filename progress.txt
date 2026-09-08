@@ -2320,3 +2320,102 @@ Paired with five mutations of the emitted document — dropping an enum's
 pointing an error response at a lookalike schema, making a field nullable —
 each of which reported exactly its own rule code. A clean run without those is
 indistinguishable from a ruleset that read nothing.
+
+## A leaf's `scripts/` directory is linted but NOT type-checked until you say so
+
+Every leaf tsconfig here sets `include: ["src", "*.ts"]`, which matches nothing
+under a subdirectory other than `src`. eslint has no such notion and lints the
+file regardless, so a build script lands half-gated: a style error fails `lint`
+and a **type error passes every gate in the verification order**.
+
+`packages/contracts-service-a/tsconfig.json` now reads
+`["src", "scripts", "*.ts"]`. Any leaf that grows a `scripts/` directory —
+`contracts-service-b` next — needs the same line, and the `**/*.test.ts`
+exclude still applies inside it. Measured with negative controls on the new
+file: `tsc --listFiles` names it, a `const x: string = 2` reddens
+`check-types` with TS2322, a double-quoted string reddens `lint` with
+`@stylistic/quotes`.
+
+## The contract emit script: what it exports, and why the exports are the point
+
+`packages/contracts-service-a/scripts/emit.ts` is the shape
+`contracts-service-b`'s emit script should copy. It is wired to a per-package
+`contracts:emit` script; there is deliberately no root fan-out, because
+`scripts/pipeline-simulation.ts` is the thing that runs across every contract
+package and it goes through `runGates`.
+
+- It exports `buildDocument()`, `serializeDocument(document)` and
+  `OPENAPI_DOCUMENT_PATH`, with the CLI behind the
+  `fileURLToPath(import.meta.url) === process.argv[1]` guard so importing the
+  module writes nothing (skill: `esm-dual-purpose-cli-module`; verified by
+  importing it with the artifact deleted and confirming it stayed deleted).
+  The byte-identity test lands two tasks later and has to re-emit through
+  *these* exports — a test that rebuilds the metadata itself compares the
+  committed artifact against its own copy of the same decisions, and stays
+  green while the two drift apart.
+- **`serializeDocument` is half of the contract with that test**: two-space
+  JSON plus a trailing newline. Byte-identity is the entire reason to commit a
+  generated file, so the formatting cannot be the test's private opinion.
+- Every path resolves from `import.meta.url`, never `process.cwd()`. Verified
+  by running the script from the repo root: same bytes, same destination, and
+  no `openapi/` created at the root.
+- **Three exit codes, the same split every gate here makes** — 0 written, 1
+  gate 1 refused the contract (`UnrepresentableSchemaError`, reported with its
+  `path` and `reason`), 2 the gate could not run. Both failure paths were
+  driven rather than assumed: a prerelease `version` in the manifest gives 2, a
+  `Type.Any()` planted in a schema gives 1 and names the offending path.
+
+## What the emit metadata supplies, and the one block it deliberately omits
+
+`emitOpenApi`'s `meta` is everything the emitted document states that the
+contract itself does not. Two entries are governance decisions rather than
+boilerplate, and the third is an omission worth stating:
+
+- **`components.securitySchemes` is where the credential lives.** The contract
+  declares no `Authorization` header parameter, because OpenAPI says a header
+  parameter with that name SHALL be ignored — so without a scheme in the meta
+  the emitted document states nothing at all about spec section 2.3. A
+  scheme's `type: 'http'` trips neither house rule 2 nor 6: those key on
+  `type == 'object'` and on a `type` **array** containing `null`.
+- **`info.version` is read from the package manifest, never restated.** It is
+  the number consumers pin (spec section 2.2) and the number the publish step
+  names a baseline after. The script refuses anything that is not
+  `<major>.<minor>.<patch>`, because `latestPublishedSpec` throws on a
+  prerelease baseline — catching it at emit puts the refusal one step earlier,
+  in front of the human still choosing the version.
+- **No `servers` block.** A base URL says where a deployment lives, not what
+  the API promises, and four callers read this one document. ts-rest clients
+  take a `baseUrl` and Prism takes a host and port, so nothing needs it, and a
+  hardcoded `localhost` in a published contract is a fact about one laptop.
+
+Re-run the mutation controls after any metadata change, not only after a schema
+change: the emitted document lints clean against the house ruleset, and clean
+is indistinguishable from unread. Six mutations of the emitted JSON (drop an
+enum's `unknown`, delete an `additionalProperties`, drop an `operationId`,
+point a `401` at a lookalike error schema, make a field's `type` a
+`["string","null"]` array, mark an operation `deprecated` with no `x-sunset`)
+each reported exactly its own rule code and nothing else.
+
+## A ranged workspace dependency still links, and `contract-` dodges the pin gate
+
+`@marcos-corp/contract-tooling` is a **leaf devDependency** of a contract
+package — build tooling, not published surface, the same exception as
+`@types/express` and `drizzle-kit` — declared `^0.1.0` rather than pinned.
+Measured: bun symlinks it into the leaf's own `node_modules` for a caret range
+exactly as it does for an exact pin, so the "a bare exact pin already resolves
+to the workspace package" note above holds in the range direction too.
+
+Ranging it is correct rather than sloppy, and the reason is worth having ready
+for a reviewer: `assertExactContractPins` governs the `@marcos-corp/contracts-`
+prefix, and `contract-tooling` is singular `contract-`, one character short of
+it. It is an ordinary internal library rather than a published contract, so it
+carries no pinning obligation.
+
+## Shell trap: cleaning up your own `mktemp -d` is refused too
+
+Sharpens the `rm -rf` note above, which reads as being about a fixed
+`/tmp/<name>` path. A trailing `rm -rf "$SCRATCH"` where `$SCRATCH` came from
+`mktemp -d` is denied just the same, and the denial kills the **whole compound
+command** — so the six mutation reports it was appended to never ran either,
+and the failure looks like the probe rather than the cleanup. Leave the scratch
+directory behind: `mktemp -d` is unique per run and nothing collides.
