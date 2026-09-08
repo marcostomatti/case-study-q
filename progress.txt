@@ -2970,3 +2970,92 @@ response was already sent. Consequence worth stating wherever a reviewer will
 look for it: a `401` produces **no** `api_usage` row, deliberately — an
 unauthenticated request is not a consumer using an operation, and a placeholder
 `client_id` would put rows into the §9.4 query that no owner can be told about.
+
+## The mapping layer: two fold tables, and the shape both halves need
+
+`services/service-a/src/mapping/cardMapper.ts` exports `toContractCard`,
+`toContractCardState`, `resolveCardArtUrl` and `CardMappingOptions`;
+`transactionMapper.ts` exports `toContractTransaction`,
+`toContractSettlementState`, `toContractMerchantCategory`,
+`MERCHANT_CATEGORY_RANGES` and `MerchantCategoryRange`. All are re-exported
+from the package's `src/index.ts`. `dashboardMapper.ts`, the repositories, the
+routes and `service-b`'s stubbed responses should call these rather than
+re-folding a row, or the divergence spec section 2.1 rests on gets two
+spellings.
+
+Three conventions the remaining mappers should copy rather than re-derive:
+
+- **A fold table is a total `Record<DatabaseEnum, ContractEnum>`, read through
+  a `Map<string, ContractEnum>`.** The record's type is what turns "somebody
+  added a member to the database enum" into a failed `check-types` instead of a
+  quiet `unknown` — measured: deleting one entry gives tsc exit 2 *and* reddens
+  three runtime cases. The `Map` is what makes the lookup cast-free, since the
+  fold function takes a `string`: the row type says the column holds one of N
+  values and a database migrated ahead of the running service disagrees, which
+  is the entire situation spec section 2.5's `unknown` member exists for.
+- **Both fold directions need a closure case.** "No database member is
+  unhandled" and "no published member except `unknown` is unreachable" are
+  different claims, and the second one is the only thing that catches a
+  contract enum member every consumer writes dead code for. Each needs its
+  control in the same case (the enum it filtered is non-empty), or an empty
+  result list is indistinguishable from an empty input.
+- **Anything the mapper cannot read from the row is a parameter, never an
+  environment read.** `cardMapper` takes the card-art base URL that way, for
+  the reason `loadServiceEnv` is a function and `buildConsumerRegistry` takes
+  its consumers: importing the package must not require a configured machine.
+  `server.ts` supplies it; growing a fourth variable in `config/env.ts` is that
+  module's decision, with its own closure cases.
+
+## An object literal is excess-property checked; a SPREAD of a row is not
+
+The single most useful thing to know before writing another mapper, because it
+decides whether `check-types` is a second gate against a column leaking into a
+response or no gate at all. Measured on TypeScript 5.9.3:
+
+    export const byLiteral: Narrow = { id: 'a', secretColumn: 'x' };  // TS2353
+    export const bySpread:  Narrow = { ...wide };                     // exit 0
+
+So a mapper written `return { ...row, state: fold(row.lifecycleStatus) }`
+compiles and publishes every column. A mapper that names each field is caught:
+the leg that added `cardId` and `merchantCategoryCode` to the returned literal
+reddened tsc *and* three cases. Do not read a passing `check-types` on a
+spread-built payload as evidence of anything — and note the near miss that
+makes this easy to get wrong: spreading a Drizzle row into a contract type
+often *does* fail, but on a `Date` or a `null` colliding with a `string`, not
+on the extra columns. Change the row's shape and the same code compiles.
+
+The runtime half is a whole-payload `toStrictEqual` plus a per-field
+`expect(field in payload).toBe(false)` for the columns a derived schema would
+have published. `toStrictEqual` also distinguishes an absent key from a
+present-and-`undefined` one, which is what states spec section 2.5's
+absent-not-null convention — an `activatedAt: row.activatedAt?.toISOString()`
+leg reddens it and `JSON.stringify` cannot see the difference.
+
+## A guard's cases are vacuous unless one input it ALONE owns is among them
+
+Generalises the mutation-grid notes to input validation, and it cost a wrong
+prediction here. `toContractMerchantCategory` rejects anything that is not four
+digits before parsing. Of the five malformed inputs the suite covers — empty,
+short, long, non-numeric, trailing junk — dropping the guard reddened exactly
+**one**: `parseInt` already answers `NaN` or an out-of-range number for the
+other four, so those cases pass identically with and without it. Only `'5814x'`
+discriminates, because `parseInt` reads it as `5814` and publishes `dining`.
+
+So before writing a validation case, ask which input the guard is the *only*
+reason for. A group of plausible-looking bad inputs that the downstream parser
+would have rejected anyway is a group that proves the parser, not the guard.
+
+## Importing `@marcos-corp/db/seed` from a service works, `pg` and all
+
+`seed.ts` imports `Pool` from `pg` at module load and `pg` is a dependency of
+`packages/db`, not of `services/service-a` — which reads as unresolvable under
+bun's isolated linker. It is not: the import is resolved relative to
+`packages/db/src/seed.ts`, so it finds `packages/db/node_modules/pg`. Verified
+by running a `services/service-a` suite that calls `buildSeedRows`.
+
+That makes the seed's pure half usable as fixture data anywhere in the
+workspace, which is worth more than it sounds: a case asserting every merchant
+category code the seed inserts classifies is what stops a later edit to a
+lookup table from rendering the demo's transaction list as a column of
+`unknown`. Pair it with the control the shape needs — the seed built a non-zero
+number of rows — or an empty result list is a statement about nothing.

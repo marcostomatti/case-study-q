@@ -4,9 +4,10 @@
  *
  * What has landed: `config/env.ts`, the Zod-parsed environment,
  * `auth/clientIdentity.ts`, the consumer identity spec section 2.3 requires on
- * every request, and `telemetry/usageLogger.ts`, the `api_usage` row it writes
- * for each one. Still to come and wired in here as they arrive: the
- * Drizzle-row-to-contract mapping layer, the ts-rest routes and the Express
+ * every request, `telemetry/usageLogger.ts`, the `api_usage` row it writes for
+ * each one, and `mapping/`, the Drizzle-row-to-contract translation that keeps
+ * the database schema out of the published payloads. Still to come and wired
+ * in here as they arrive: the repositories, the ts-rest routes and the Express
  * `server.ts` factory. `bun run dev` runs this file, so it becomes the process
  * entrypoint once `server.ts` exists.
  *
@@ -58,6 +59,19 @@ export {
   serviceEnvSchema,
 } from './config/env';
 export type { EnvProblem, EnvVariable, ServiceEnv } from './config/env';
+export {
+  resolveCardArtUrl,
+  toContractCard,
+  toContractCardState,
+} from './mapping/cardMapper';
+export type { CardMappingOptions } from './mapping/cardMapper';
+export {
+  MERCHANT_CATEGORY_RANGES,
+  toContractMerchantCategory,
+  toContractSettlementState,
+  toContractTransaction,
+} from './mapping/transactionMapper';
+export type { MerchantCategoryRange } from './mapping/transactionMapper';
 export {
   apiUsageSink,
   CONSUMER_PACKAGE_HEADER,
