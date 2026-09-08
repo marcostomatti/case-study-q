@@ -79,6 +79,7 @@
       "name": "@marcos-corp/service-a",
       "version": "0.1.0",
       "dependencies": {
+        "@marcos-corp/contracts-service-a": "0.1.0",
         "@ts-rest/core": "^3.52.1",
         "@ts-rest/express": "^3.52.1",
         "express": "^4.22.2",

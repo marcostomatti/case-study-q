@@ -2750,3 +2750,104 @@ Four conventions `service-b`'s equivalent should copy rather than re-derive:
   module-level singleton, so importing any part of the service on a machine
   with no environment still works. Verified with `bun src/index.ts`, which
   exits 0 with none of the three variables set.
+
+## The provider pins the contract package too, exactly like a consumer
+
+`assertExactContractPins` governs every `services/*` and `apps/*` manifest and
+the provider is not exempt: `services/service-a` declares
+`"@marcos-corp/contracts-service-a": "0.1.0"` with no range specifier. It needs
+the published error catalogue (`ERROR_CODES`) and the published payload shapes
+to answer in the shape it publishes; a second, service-local spelling of "what
+went wrong" would be one the consumer's single error path does not handle.
+
+Verified with a negative control rather than assumed: `^0.1.0` reports
+`reason: 'range'` naming the package and the field, the exact pin reports
+nothing, and all four consuming packages (`service-a`, `service-b`, `web-a`,
+`web-b`) are clean today.
+
+## `auth/clientIdentity.ts` is where spec section 2.3's identity is resolved
+
+`services/service-a/src/auth/clientIdentity.ts` exports
+`clientIdentityMiddleware(registry)`, `resolveClientIdentity(header, registry)`,
+`buildConsumerRegistry(consumers)`, `fingerprintCredential(credential)`,
+`readClientIdentity(req)`, `requireClientIdentity(req)`,
+`ConsumerRegistryError`, `CREDENTIAL_SCHEME` and `UNAUTHENTICATED_STATUS`, all
+re-exported from the package's `src/index.ts`. `telemetry/usageLogger.ts`, the
+routes, `server.ts` and acceptance script 04 should call `requireClientIdentity`
+rather than reading a header themselves.
+
+Four conventions the remaining `services/*` tasks inherit:
+
+- **The credential is an HTTP bearer token**, matching the emitted document's
+  `consumerCredential` security scheme, and the registry stores a lowercase hex
+  SHA-256 of it rather than the credential. Lookup is a `Map` keyed on that
+  digest, which is also the answer to timing: an attacker cannot steer a digest
+  without already holding the credential, so no `timingSafeEqual` scan is
+  needed or used.
+- **The registry is a parameter, not an environment read.** `server.ts` builds
+  one and hands it in, for the reason `loadServiceEnv` is a function rather
+  than a module-level parse — importing the package must not require a
+  configured machine. `config/env.ts` declares three variables and adding a
+  fourth is that module's decision, with its own closure cases to update.
+- **Every refusal is the contract's shared error payload**, code
+  `unauthenticated` and `fields` absent, plus an RFC 6750 `WWW-Authenticate`
+  challenge distinguishing "you sent nothing" (a bare realm) from "what you
+  sent is no good" (`error="invalid_token"`). A client library acts on the
+  difference; a consumer does not, which is why all three rejection reasons
+  carry one code.
+- **A misconfigured registry is a startup throw, never a runtime 401.** Empty,
+  a duplicate `client_id`, a shared credential and a plaintext credential
+  pasted into the digest field are each refused by `buildConsumerRegistry` with
+  every problem in one throw — the same "the input is bad" versus "this cannot
+  run" split every gate in `contract-tooling` makes.
+
+## Hang per-request context on a `WeakMap`, not on an augmented `Request`
+
+General to anything in `services/*` carrying state from a middleware to a
+handler; the usage logger wants exactly this next. A global
+`declare module 'express-serve-static-core'` has two spellings and both lose: a
+required field makes every request in the workspace claim state it may not
+have, and an optional one makes every read site free to skip the check. Neither
+is visible to any gate in the verification order.
+
+A module-private `WeakMap<object, T>` keyed on the request object, with a
+`requireX(req)` that throws when the middleware did not run, states the
+invariant instead. Keep the writer unexported: nothing outside the module can
+then forge the value, so "this request carries an identity" means "a credential
+resolved to one" by construction rather than by review. A later suite that
+needs a populated request runs the middleware with a one-entry fixture.
+
+## Two `@stylistic` traps, one for a string and one for a sibling type import
+
+Both cost a red lint run and neither reads as a rule violation.
+
+- **A single-line double-quoted string is rejected even when it contains a
+  single quote.** `"client_id 'web-a'"` fails `@stylistic/quotes`. The fix that
+  reads best is an interpolated template, which also derives the value from the
+  fixture instead of restating it. This refines the multi-line-template note
+  above: the exemption is for a line break or a substitution, never for an
+  embedded quote character.
+- **`import type` from a SIBLING sorts before `import type` from an external
+  package.** The `type` group is alphabetized like every other group and `.`
+  sorts before a letter, so a `from './x'` type import goes above a
+  `from 'express'` one. This refines the "`import type` sorts into its own
+  group" note above, which gives the group's placement and not the order
+  inside it.
+
+## A positive control inside a shared refusal helper widens every coarse leg
+
+Mutation-grid reading, general to any suite built the
+`refusal-case-needs-a-positive-control` way. When the control lives in the
+helper that every refusal case calls — "the registry you handed me still
+resolves the credential it was built from" — a leg breaking resolution outright
+reddens the whole file rather than the cases it targets. Measured over one
+module: 14 legs, 13 reddening exactly their predicted cases with the total
+holding at 40, and the one that did not (looking a credential up by its raw
+value instead of by its digest) reddening 19 of 40 because it also killed the
+control.
+
+That is the control doing its job, not a suite that is too coupled — but
+predict it, or a wide red set reads as a failure of the grid. A leg that
+disables a *mechanism* every case depends on cannot be predicted per case; aim
+it at the claim ("the lookup is by digest") and read the narrow legs for
+per-case coverage.
