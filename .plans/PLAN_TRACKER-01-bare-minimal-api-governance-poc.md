@@ -211,7 +211,7 @@ rule the emitted JSON Schema cannot state (spec §2.4).
 - [x] Add `packages/contracts-service-a/src/contract.ts` defining the ts-rest contract with operations for listing companies, reading a company dashboard, listing transactions with pagination, and activating a card, each carrying an `operationId` and referencing the shared error schema on every error response
 - [x] Add `packages/contracts-service-a/scripts/emit.ts` invoking `emitOpenApi` from `@marcos-corp/contract-tooling` and writing `packages/contracts-service-a/openapi/openapi.json`, wired to a `contracts:emit` package script
 - [x] Run the emit script and commit `packages/contracts-service-a/openapi/openapi.json` as a build artifact, then copy it to `packages/contracts-service-a/openapi/published/0.1.0.json` as the first published baseline
-- [ ] Add a `packages/contracts-service-a` test asserting the emitted document passes every house rule in `house.spectral.yaml` and that the emitted document is byte-identical to the committed `openapi/openapi.json`, so a stale committed artifact fails CI
+- [x] Add a `packages/contracts-service-a` test asserting the emitted document passes every house rule in `house.spectral.yaml` and that the emitted document is byte-identical to the committed `openapi/openapi.json`, so a stale committed artifact fails CI
 - [ ] Add a `packages/contracts-service-a` test asserting `assertNoDbImport` returns no findings for the package, and asserting the package manifest declares no dependency on `@marcos-corp/db`
 
 The byte-identity assertion above is the whole reason to commit a generated

@@ -2592,3 +2592,54 @@ not match any file(s) known to git` — and the **next** leg then runs with the
 previous mutation still applied and reports a red set that is the union of two
 legs. Absolute paths in every mutate/restore pair, and read
 `git status --porcelain` between legs rather than after all of them.
+
+## The gate-4 test for a contract package, and why the control is a COPY of it
+
+`packages/contracts-service-a/src/noDatabaseDependency.test.ts` is the shape
+`contracts-service-b`'s equivalent should copy. It runs `assertNoDbImport`
+against its own package and re-reads `package.json` directly beside it. Four
+things it settles that are not obvious from the gate's own suite:
+
+- **`assertNoDbImport` returns `[]` for `packages/db` itself**, and for every
+  other package in this repo. So the gate passing says nothing about *which*
+  directory was read, and a resolution bug is invisible. Measured: pointing the
+  package constant at `../../db` left both clean cases GREEN. One case asserting
+  the manifest's own `name` is what closes it — the analogue of
+  `TRACKED_ARTIFACT_TAIL` in `scripts/emit.test.ts`.
+- **The inverting legs plant into a `cpSync` copy of the real package**, not
+  into a hand-built scratch tree: `filter: (source) => basename(source) !==
+  'node_modules'` (bun's isolated linker symlinks the leaf's deps there, and the
+  gate skips it for the same reason). A leg firing then says the gate read
+  *these* files. Pair it with a case asserting the **unmutated copy** answers
+  `[]` too, or the copy is just another scratch tree.
+- **Read the manifest twice, and do not share the field list.** The direct
+  reading is only worth having while it is independent of the gate: killing
+  `manifestFindings` reddened the four planted-field legs and left the direct
+  reading green, which is the whole point. Give it a positive control in the
+  same case (`dependencies` contains `@sinclair/typebox`) plus the near miss —
+  `@marcos-corp/contract-tooling` is a legitimate first-party dependency, so a
+  check written as "no `@marcos-corp` dependency at all" fails rather than
+  passing forever.
+- **`rmSync(dir, { recursive: true, force: true })` in an `afterAll` is fine.**
+  The "`rm -rf` under /tmp is refused" note above is about the Bash tool's
+  permission layer, not about node — a suite cleans up its own `mkdtemp` roots
+  normally.
+
+Grid, each leg predicted by case name first and each matching, total holding at
+10: plant the dependency in this package's real manifest (8 red, green =
+`pointed at` + the leg planting into the same field), plant a type-only import
+in its real `src/index.ts` (8 red, green = `pointed at` + the direct manifest
+reading), kill `manifestFindings` (4 red), kill the source scan (2 red).
+
+## A recursive scan's "stop descending" leg does not discriminate by depth
+
+Cost a wrong prediction in the grid above and it generalises to any suite
+pinning a tree walk. The walk starts at the **package root**, so `src/index.ts`
+is already one level down: removing the recursion outright reddened both plant
+legs, not just the nested one, and read as "the nested case is redundant".
+
+The leg that isolates depth is a **depth-limited** walk — `walk(dir, depth)`
+with `depth < 1` guarding the recursive call — which reddened exactly the
+`src/schemas/card.ts` case and left `src/index.ts` green. Predict per case by
+name, and when a boundary leg reddens more than predicted, check whether the
+mutation was coarser than the claim before concluding the case is redundant.
