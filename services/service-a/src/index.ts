@@ -9,10 +9,12 @@
  * the database schema out of the published payloads — including
  * `dashboardMapper.ts`, which assembles the mobile view's whole payload and
  * computes the two figures on it that no column holds — and `repositories/`,
- * the only place this service reaches Postgres. Still to come and wired in
- * here as they arrive: the ts-rest routes and the Express `server.ts` factory.
- * `bun run dev` runs this file, so it becomes the process entrypoint once
- * `server.ts` exists.
+ * the only place this service reaches Postgres. `routes/` is the newest of
+ * them: a ts-rest implementation of every operation the contract declares,
+ * plus the request checking and the shared error payload that make spec
+ * section 2.5 hold at runtime rather than only in the document. Still to come
+ * and wired in here when it arrives: the Express `server.ts` factory. `bun run dev` runs this file, so it becomes the
+ * process entrypoint once `server.ts` exists.
  *
  * Mount order is a property of this package rather than of any one module, and
  * `server.ts` inherits it: `clientIdentityMiddleware` first, then
@@ -115,6 +117,38 @@ export type {
   CompanyTransactionCriteria,
   DashboardTransactionCriteria,
 } from './repositories/transactionRepository';
+export { activateCardRoute } from './routes/cardRoutes';
+export {
+  getCompanyDashboardRoute,
+  listCompaniesRoute,
+  listCompanyTransactionsRoute,
+} from './routes/companyRoutes';
+export type { RouteClock, RouteDependencies } from './routes/dependencies';
+export {
+  CONFLICT_STATUS,
+  conflict,
+  errorBody,
+  INTERNAL_ERROR_STATUS,
+  internalError,
+  NOT_FOUND_STATUS,
+  notFound,
+  routeErrorHandler,
+  unroutedRequestHandler,
+  VALIDATION_FAILED_STATUS,
+  validationFailed,
+} from './routes/errors';
+export type {
+  RouteErrorHandlerOptions,
+  UnexpectedErrorReporter,
+} from './routes/errors';
+export {
+  isIssuedIdentifier,
+  parseQueryParameters,
+  parseRequestPayload,
+} from './routes/requestParsing';
+export type { ParseOutcome } from './routes/requestParsing';
+export { buildServiceRouter } from './routes/router';
+export type { ServiceRouter } from './routes/router';
 export {
   apiUsageSink,
   CONSUMER_PACKAGE_HEADER,

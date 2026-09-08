@@ -63,6 +63,7 @@
  */
 import type { NewApiUsageEvent } from '@marcos-corp/db';
 import type { Request, RequestHandler } from 'express';
+import type { IncomingMessage } from 'node:http';
 
 import { apiUsage } from '@marcos-corp/db';
 
@@ -189,8 +190,18 @@ const operationByRequest = new WeakMap<object, string>();
  * own key in the ts-rest router — and those keys are exactly the ids
  * `emitOpenApi` publishes. A route that forgets produces an
  * `UNROUTED_OPERATION_ID` row rather than a wrong one.
+ *
+ * The parameter is `IncomingMessage` rather than Express's `Request`, which is
+ * wider than it looks and narrower than it reads. `@ts-rest/express` hands a
+ * route a `TsRestRequest`, an express `Request` whose `query`, `params` and
+ * `body` are narrowed to the operation's own types — and a `Request` with a
+ * narrowed `query` is **not** assignable to `Request` with the default
+ * `ParsedQs`, because those appear in property positions. So the one caller
+ * this function exists for could not call it. `IncomingMessage` is the type
+ * both shapes actually share, and it is also the honest one: a `WeakMap` key
+ * needs object identity and nothing else, while still refusing a bare `{}`.
  */
-export function recordOperation(req: Request, operationId: string): void {
+export function recordOperation(req: IncomingMessage, operationId: string): void {
   operationByRequest.set(req, operationId);
 }
 

@@ -3295,3 +3295,220 @@ The case that proves the second is "activate, then activate again with a
 different instant, then re-read and assert the **first** instant survived".
 Asserting only the `null` passes against an implementation that updated the row
 and returned nothing.
+
+## `@ts-rest/express` validates NOTHING when the schemas are TypeBox
+
+The single most consequential finding for `services/service-a`'s routes, and it
+binds `services/service-b`'s routes and `docs/` equally. `@ts-rest/core`'s
+`checkZodSchema` tests for a `safeParse` method and, finding none, returns
+`{ success: true, data }` with the raw value **untouched**. Every schema in
+`packages/contracts-*` is TypeBox per spec section 5, so
+`createExpressEndpoints` runs no path-parameter, query or body validation at
+all. Measured on
+`@ts-rest/express@3.52.1`.
+
+It is silent in the worst direction: the handler's `query` argument is typed as
+the contract's query type and actually holds whatever strings the caller sent,
+so `query.limit` is `'5'` at runtime with type `number`. Spec section 2.5's
+"requests reject unknown fields" would be a sentence nothing enforced.
+
+`services/service-a/src/routes/requestParsing.ts` is what enforces it, against
+the published schema itself rather than a zod mirror. Consequences to carry:
+
+- `@sinclair/typebox` is a **runtime dependency of the service**, not only of
+  the contract package. That is not a violation of the Zod/TypeBox split — the
+  rule is about *authoring* schemas, and nothing here authors one. Say so where
+  a reviewer sees the dependency, or it reads as one.
+- `emitOpenApi` explodes `pathParams`/`query` into `parameters`, so those
+  containers' `additionalProperties: false` never reaches the document. The
+  strictness is the provider's to keep for all three request parts, from one
+  schema.
+- `RequestValidationError` and the `requestValidationErrorHandler` that
+  `createExpressEndpoints` mounts are therefore unreachable in this repo.
+
+## TypeBox cannot validate the `Type.Unsafe` enum idiom, in either spelling
+
+Follows directly from the note above, and it is a hard limit rather than a
+gotcha to work around. Measured on `@sinclair/typebox@0.34.52`:
+
+  Type.Unsafe({type, enum:[...]})            Value.Check THROWS 'Unknown type'
+  Type.Unsafe({[Kind]:'String', type, enum})  Value.Check returns TRUE for every
+                                              string — the `enum` keyword is
+                                              never read
+
+So the obvious fix is worse than the failure: a silent accept of an undeclared
+value is the one outcome a request gate must never produce. TypeBox's checker is
+kind-driven and does not read a raw `enum` at all.
+
+What this costs, per direction:
+
+- **Requests.** No request schema in `contracts-service-a` carries one today
+  (integers and bounded strings), and `requestParsing.test.ts` walks all six
+  request slots and asserts it stays that way — so the day one is added the
+  suite fails rather than production. The answer then is
+  `Type.Union([Type.Literal(...)])`, which TypeBox checks correctly; a query or
+  path parameter is exploded into `parameters`, so house rule 3 reads the
+  emitted parameter schema rather than the container.
+- **Responses.** `Value.Check(Dashboard, ...)` and `Value.Check(Card, ...)`
+  **throw**, because `CardState`, `TransactionSettlementState`,
+  `MerchantCategory` and `ErrorCode` are all `Type.Unsafe`. Anything that needs
+  "this payload validates against the contract schema" — the `services/*`
+  integration suites, acceptance script 01 — cannot get it from
+  `@sinclair/typebox/value` and has to either lint the emitted
+  `openapi/openapi.json` with a JSON Schema validator, or make the claim
+  structurally. `tsc` already pins a response body's *shape* against the
+  contract's `Static<>` type at the route, which is stronger than a runtime
+  shape check; what it does not pin is the value constraints.
+
+`requestParsing.ts` turns the throw into a pointed `request gate cannot run:`
+failure naming the cause — the same "the input is bad is a return, the gate
+cannot run is a throw" split every gate in `contract-tooling` makes.
+
+## `TsRestRequest` is NOT an Express `Request`; `IncomingMessage` is shared
+
+`TsRestRequest<T>` is `Request<Params, ResBody, ReqBody, Query> & {...}` with
+each generic narrowed to the operation's own types, and those appear in property
+positions — so a `Request` whose `query` is `{limit?: number}` is not a
+`Request` whose `query` is `ParsedQs`. Any helper a route hands its `req` to
+therefore cannot declare the parameter as `Request`.
+
+`node:http`'s `IncomingMessage` is the type both shapes share, it is what a
+`WeakMap` key actually needs, and it still refuses a bare `{}` (verified with a
+negative control: TS2345, "missing 67 more properties"). `recordOperation` in
+`telemetry/usageLogger.ts` was widened to it for exactly this reason;
+`requireClientIdentity` did not need it because no route calls it.
+
+## `Value.Default` applies the DOCUMENT's defaults, optional properties included
+
+The reason `services/service-a`'s routes restate neither `PAGE_LIMIT_DEFAULT`
+nor the offset default. `Value.Default(schema, value)` fills every `default` the
+schema declares — including one inside a `Type.Optional(...)` — and **mutates**
+what it is handed, so pass it a fresh copy and never `req.query`.
+
+Two consequences worth copying to any provider-side request path:
+
+- The published `limit: 20` / `offset: 0` become the numbers the provider
+  applies, by construction. A restated constant is a second copy of a figure a
+  consumer read out of the document.
+- The resulting *type* still says optional, so the caller needs a narrowing.
+  Make it a **throw** naming the contract change that would cause it, not a
+  fallback: a fallback silently takes over the moment the schema stops
+  declaring a `default`, which is `readTotal`'s argument again.
+
+## `ContractPlainType<Value>` infers, so a helper can pair a slot with its type
+
+The shape that removes every per-route cast. Declaring
+
+    function parseX<V>(slot: ContractPlainType<V>, raw: unknown): Outcome<V>
+
+and calling it with `contract.activateCard.body` gives `Value` =
+`{ confirmedLastFour: string }` — verified with a negative control (assigning it
+to `number` is TS2322, so it is not `any`). One cast lives inside the helper,
+mirroring the contract module's own `contractSchema` cast in the opposite
+direction, and a caller cannot hand over one operation's schema and read
+another's shape.
+
+## `initServer().route(contract.<key>, impl)` is how a route gets its types
+
+`s.router(contract, {...})` types an object literal all at once, which is no use
+when each route lives in its own module. `s.route()` is the per-route form and
+carries the same inference. Both were verified under zod 4 with the repo's
+`satisfies AppRouter` contract, and both are load-bearing rather than cosmetic:
+
+  status: 418            TS2322 — the contract declares no such response
+  code: 'not_a_code'     TS2322 — naming the six published members
+
+So a route's success status can be written as a plain `200` literal and still be
+checked, and every error body is checked against `ErrorResponse`'s static type.
+That is a stronger guarantee than any runtime shape assertion, and it is why the
+route suites assert values rather than shapes.
+
+## The `services/*` route layer: the module map `service-b` should copy
+
+`services/service-a/src/routes/` is six modules, and `service-b`'s should
+mirror them rather than re-derive:
+
+  dependencies.ts     `RouteDependencies` — the db handle, the card-mapping
+                      options, and a `now: () => Date` clock. Every member
+                      required, no defaults, same argument as `config/env.ts`.
+  errors.ts           the four status constants, the `ErrorResponse` builders,
+                      `routeErrorHandler` and `unroutedRequestHandler`.
+  requestParsing.ts   `parseQueryParameters` / `parseRequestPayload` /
+                      `isIssuedIdentifier`, plus `SCHEMA_NOT_CHECKABLE`.
+  companyRoutes.ts /  the implementations, grouped by what they address.
+  cardRoutes.ts
+  router.ts           `buildServiceRouter(deps)` — the mapping and nothing else.
+                      Mounts no middleware; `server.ts` owns the whole stack.
+
+Four conventions each route follows, in this order:
+
+1. **`recordOperation` first**, before anything can fail, so a request refused
+   at validation still writes an attributed `api_usage` row. A route that named
+   itself after validating leaves every `400` recorded as `<unrouted>`.
+2. **Check the request against the contract** through `requestParsing`, and
+   return `{ status: VALIDATION_FAILED_STATUS, body }` rather than throwing —
+   the returned status is what `tsc` checks against the declared responses.
+3. **Refuse an identifier the provider could not have issued** before spending a
+   round trip. `isIssuedIdentifier` is the one place in the service that knows
+   the key scheme; the contract keeps publishing ids as opaque, and a
+   `not_found` for an unissuable id is correct rather than lenient. Without it a
+   non-uuid path parameter reaches Postgres and surfaces as a `500`.
+4. **Read, map, answer.** Rows never reach a response.
+
+Two more that are easy to get wrong:
+
+- **Reads that are both needed on the success path are issued together**
+  (`Promise.all`), and reads that depend on an earlier answer stay sequential. A
+  `404` then pays for one read it did not need; every `200` saves a round trip.
+- **A `404` message must not distinguish "no such thing" from "not yours".** The
+  catalogue folds them onto one code precisely so an unauthorised caller cannot
+  enumerate identifiers, and wording that separates them hands back what the
+  code withheld.
+
+## Express's own failure shapes, measured, for anything mounting a stack
+
+- `express.json()` refuses a body by calling `next` with an `Error` carrying a
+  non-enumerated `type` (`entity.parse.failed`, `entity.too.large`,
+  `encoding.unsupported`) and an HTTP `status`. Key on **both** — `type` alone
+  matches an unrelated error that happens to carry one. Map every 4xx of them
+  onto the contract's `400`: this contract publishes no `413`, and answering an
+  undeclared status is worse than the declared one that means "not a request I
+  will act on".
+- **No body at all gives `req.body === {}`**, not `undefined`, so a required
+  field reports as missing rather than as a missing body. An array body arrives
+  verbatim and fails an object schema with an empty error path.
+- `req.query` and `req.params` are ordinary objects with a prototype, so
+  TypeBox walks them. `?a=1&a=2` gives an array, `?a[b]=1` gives an object,
+  `?a=1.5` gives a string — all three fail an `integer` schema rather than being
+  coerced.
+- An error arriving after `res.headersSent` must be handed to `next`, not
+  answered: writing a second status onto a started response throws and replaces
+  a partly-delivered answer with a crashed connection.
+
+## Two test shapes the route suites added, both reusable
+
+- **A `Proxy` database that throws on every property read.** The only way to
+  assert a route answered *before* reading rather than merely instead of
+  reading — a seeded database cannot tell the two apart. `routes/router.test.ts`
+  drives all four operations to a `400` with one, which is what makes
+  "`recordOperation` runs first" a measurement.
+- **`src/testing/routeInvocation.ts`** — `invokeRoute(handler, {params, query,
+  body})` calls a ts-rest route directly, with `RecordingResponse` and
+  `fakeRequest` for the middleware that needs them. What it is blind to is
+  everything Express does *around* a handler: route matching, `express.json()`,
+  mount order, and the two handlers in `routes/errors.ts`. Those need a real app
+  on an ephemeral loopback port, which `routes/errors.test.ts` stands up.
+
+A trap this hit, extending the "module-level guard absorbs fixture mutations"
+note above: a fixture **array built at module scope** whose builder throws makes
+every case in the file *vanish* (`Tests no tests`) rather than one go red.
+Measured — a mutation stripping unknown query keys reported the whole file gone.
+Build such fixtures inside a function called per case.
+
+## `RequestInit` is not a name in this repo — no DOM lib, and no eslint global
+
+Small and it will recur in any suite that calls `fetch`. Leaf tsconfigs set
+`lib: ["ES2022"]` with no DOM, and `eslint.base.mjs`'s `globals.browser` set
+does not carry `RequestInit` either, so a bare annotation fails `no-undef` at
+lint time. `Parameters<typeof fetch>[1]` is the spelling that works in both —
+`fetch` itself *is* a registered global.
