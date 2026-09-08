@@ -25,7 +25,9 @@
     "test": "vitest run",
     "test:all": "bun run test && bun run --filter '@marcos-corp/*' test",
     "gate:control-bytes": "bun tools/control-byte-gate/control-byte-gate.ts",
-    "ralph": "bun tools/ralph/ralph.ts"
+    "ralph": "bun tools/ralph/ralph.ts",
+    "pipeline:simulate": "bun scripts/pipeline-simulation.ts",
+    "demo:up": "bun scripts/demo.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -43,5 +45,8 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.69.0",
     "vitest": "^4.1.7"
+  },
+  "dependencies": {
+    "@marcos-corp/contract-tooling": "^0.1.0"
   }
 }

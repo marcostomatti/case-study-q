@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "marcos-corp",
+      "dependencies": {
+        "@marcos-corp/contract-tooling": "^0.1.0",
+      },
       "devDependencies": {
         "@eslint/js": "^10.0.1",
         "@eslint/markdown": "^8.0.3",
