@@ -2851,3 +2851,122 @@ predict it, or a wide red set reads as a failure of the grid. A leg that
 disables a *mechanism* every case depends on cannot be predicted per case; aim
 it at the claim ("the lookup is by digest") and read the narrow legs for
 per-case coverage.
+
+## An untracked file cannot be restored with `git checkout` — a mutation grid needs a copy
+
+Sharpens the "restoring a mutated file after a leg that `cd`s" note above with
+the failure that bites on the *first* grid over a brand-new module. `git
+checkout -- <path>` on a file that has never been committed fails with
+`pathspec ... did not match any file(s) known to git`, and because a grid
+driver usually pipes its output, the failure scrolls past while the **next**
+leg runs against code still carrying the previous mutation. The red set is then
+the union of two legs and reads as a suite that is too coupled.
+
+`cp <module> /tmp/<module>.pristine.ts` before the first leg and restore from
+that copy, not from git. Worth doing even for a tracked file — it is one rule
+instead of two, and it survives the `cd` trap as well.
+
+Two neighbours from the same grid, both cheap:
+
+- Drive the mutation through a **regex with an occurrence count assertion**
+  (`re.subn(...)`, `assert n == 1`), not `str.replace`. A literal replace of a
+  fragment containing a quote cannot be passed through a single-quoted shell
+  argument at all, and the failure is silent in the direction that matters: the
+  leg reports "MUTATION DID NOT APPLY" only if something asserts it.
+- A leg that leaves **unbalanced braces** reports `Tests  no tests`, not a red
+  set. That is the "9 cases vanished" reading again, and at zero it is easy to
+  misread as "this mutation broke everything". Read the total on every leg.
+
+## An Express middleware suite needs no HTTP server — an EventEmitter response is enough
+
+Applies to `usageLogger.ts` and to every remaining middleware in `services/*`.
+A response the suite finishes itself is enough to drive a `res.on('finish')`
+hook, costs no port and no supertest dependency:
+
+    class FakeResponse extends EventEmitter {
+      statusCode = 200;
+      finish(status) { this.statusCode = status; this.emit('finish'); }
+    }
+
+Two things it has to be paired with, both of which cost a wrong reading:
+
+- **Flush the microtask queue before asserting.** A `finish` handler that
+  `void`s an async write has not run by the time `emit` returns. `await new
+  Promise((r) => setImmediate(r))` between finishing and reading.
+- **Attach upstream state by running the real upstream middleware**, never by
+  hand-building the request. `clientIdentityMiddleware` is deliberately the
+  only writer of the identity `WeakMap`, so a hand-built request tests a shape
+  this service never produces.
+
+## Drizzle names every column in an INSERT, so a column-name assertion is near-vacuous
+
+Found by mutation while proving the `api_usage` sink, and it generalises to any
+"this statement writes these columns" claim. `db.insert(t).values({...})`
+renders **every** column of the table in the column list and fills a field the
+caller omitted with `default`. So dropping a field from the values object
+leaves the rendered SQL still containing `"consumer_package_name"` and a case
+built as `expect(text).toContain('"<column>"')` stays green.
+
+The values list is what discriminates:
+
+    values (default, $1, $2, $3, $4, $5, $6)
+
+one `default` for the generated key and one placeholder per column the caller
+is responsible for. Measured: with only the column-name assertion, dropping a
+field reddened 1 case; with the values-list assertion beside it, 2.
+
+Two further facts from the same recording-client probe (skill:
+`drizzle-recording-client-probe`), both worth knowing before writing one:
+
+- **`drizzle-orm/node-postgres` does not import `pg` at module load.** A
+  recording client works in a package that declares only `drizzle-orm` — this
+  suite runs with `pg` unresolvable from `services/service-a`, verified. So the
+  probe needs no driver and no database, unlike the `packages/db` suites.
+- A `Date` bound into a statement arrives in `params` as an **ISO string**, not
+  as a `Date`. Assert `value.toISOString()`.
+
+## State a service module's database need as a port, then pin it with `.test-d.ts`
+
+The shape `usageLogger.ts` uses and the remaining `services/*` modules should
+copy. Putting `NodePgDatabase` in an exported signature drags a driver into the
+surface of a module whose job is to hand over six values, and ties it to a
+connection strategy the repository layer has not chosen yet. A one-method
+interface avoids that — and, written alone, is a fake with extra steps that
+agrees with the suite's own stub and with nothing else.
+
+The line that makes it honest is in the colocated `.test-d.ts`, and it is read
+by `check-types` rather than by the runner:
+
+    expectTypeOf<NodePgDatabase<Record<string, never>>>().toExtend<UsageDatabase>();
+
+Direction matters — the real database must satisfy the port, never the reverse.
+Proven non-vacuous by adding a method to the port that no driver has: TS2344,
+naming the missing members. Without that control, a `NodePgDatabase` that
+resolved to `any` (which it would if the driver's types failed to resolve)
+would satisfy anything.
+
+## Two sentinels the `api_usage` writer introduces, and the namespace argument for both
+
+`services/service-a/src/telemetry/usageLogger.ts` records
+`UNROUTED_OPERATION_ID` (`<unrouted>`) when no route claimed a request and
+`UNSTATED_CONSUMER_PACKAGE` (`<unstated>`) when the caller named no package.
+Acceptance script 04 (spec §9.4), `docs/field-retirement.md` and the
+affected-consumer list a major version needs all query this table and should
+filter on these rather than rediscover them.
+
+Both columns are `NOT NULL` and an empty string would be indistinguishable from
+a caller that sent one, so the absence is spelled out. The angle brackets are
+load-bearing rather than decorative: every `operationId` `emitOpenApi` derives
+is a camel-joined router key and no npm package name may contain a bracket, so
+neither sentinel can collide with a real value, and a join to the published
+operation list simply drops the unrouted rows — which is the right answer.
+
+The mount-order decision that goes with them, which `server.ts` inherits:
+`clientIdentityMiddleware` first, then `usageLoggerMiddleware`, then the
+router. The logger calls `requireClientIdentity` **in the middleware body**,
+not in the `finish` handler, so a wiring mistake becomes a `500` through
+Express's error handler rather than an uncaught exception thrown after the
+response was already sent. Consequence worth stating wherever a reviewer will
+look for it: a `401` produces **no** `api_usage` row, deliberately — an
+unauthenticated request is not a consumer using an operation, and a placeholder
+`client_id` would put rows into the §9.4 query that no owner can be told about.

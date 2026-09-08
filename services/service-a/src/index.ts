@@ -2,12 +2,19 @@
  * Entrypoint and public surface of `@marcos-corp/service-a`, the provider for
  * cards and transactions.
  *
- * What has landed: `config/env.ts`, the Zod-parsed environment, and
+ * What has landed: `config/env.ts`, the Zod-parsed environment,
  * `auth/clientIdentity.ts`, the consumer identity spec section 2.3 requires on
- * every request. Still to come and wired in here as they arrive: the usage
- * logger, the Drizzle-row-to-contract mapping layer, the ts-rest routes and the
- * Express `server.ts` factory. `bun run dev` runs this file, so it becomes the
- * process entrypoint once `server.ts` exists.
+ * every request, and `telemetry/usageLogger.ts`, the `api_usage` row it writes
+ * for each one. Still to come and wired in here as they arrive: the
+ * Drizzle-row-to-contract mapping layer, the ts-rest routes and the Express
+ * `server.ts` factory. `bun run dev` runs this file, so it becomes the process
+ * entrypoint once `server.ts` exists.
+ *
+ * Mount order is a property of this package rather than of any one module, and
+ * `server.ts` inherits it: `clientIdentityMiddleware` first, then
+ * `usageLoggerMiddleware`, then the router. The logger reads an identity the
+ * auth middleware resolved and refuses a request that arrives without one, so
+ * the reverse order turns every request into a `500`.
  *
  * Two constraints bind everything added to this package:
  *
@@ -20,9 +27,10 @@
  *   non-breaking change.
  *
  * Re-exporting a module here must stay side-effect free. `loadServiceEnv` is a
- * function rather than a parsed singleton for exactly that reason, and
- * `buildConsumerRegistry` is one for the same reason: importing this file must
- * not require an environment or a configured consumer registry.
+ * function rather than a parsed singleton for exactly that reason,
+ * `buildConsumerRegistry` is one for the same reason, and `apiUsageSink` takes
+ * a database rather than opening one: importing this file must not require an
+ * environment, a configured consumer registry or a reachable Postgres.
  */
 
 export {
@@ -50,3 +58,18 @@ export {
   serviceEnvSchema,
 } from './config/env';
 export type { EnvProblem, EnvVariable, ServiceEnv } from './config/env';
+export {
+  apiUsageSink,
+  CONSUMER_PACKAGE_HEADER,
+  recordOperation,
+  UNROUTED_OPERATION_ID,
+  UNSTATED_CONSUMER_PACKAGE,
+  usageLoggerMiddleware,
+} from './telemetry/usageLogger';
+export type {
+  UsageDatabase,
+  UsageEvent,
+  UsageFailureReporter,
+  UsageLoggerOptions,
+  UsageSink,
+} from './telemetry/usageLogger';
