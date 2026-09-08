@@ -13,8 +13,9 @@
  * .json()` refusing a body, the mount order of the identity and usage
  * middleware, and the two handlers in `routes/errors.ts` that answer the paths
  * no route claims. Those are properties of the stack, and the suites that make
- * them — `routes/errors.test.ts` today, the service's integration suite next —
- * run a real application on an ephemeral loopback port instead.
+ * them — `routes/errors.test.ts` for the two handlers, `server.test.ts` for
+ * the mount order, the service's integration suite for the payloads — run a
+ * real application on an ephemeral loopback port instead.
  *
  * Test support, deliberately **not** re-exported from `src/index.ts`, for the
  * reason `src/testing/seededDatabase.ts` gives. It lives under `src/` so

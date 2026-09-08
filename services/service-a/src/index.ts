@@ -9,18 +9,28 @@
  * the database schema out of the published payloads — including
  * `dashboardMapper.ts`, which assembles the mobile view's whole payload and
  * computes the two figures on it that no column holds — and `repositories/`,
- * the only place this service reaches Postgres. `routes/` is the newest of
- * them: a ts-rest implementation of every operation the contract declares,
- * plus the request checking and the shared error payload that make spec
- * section 2.5 hold at runtime rather than only in the document. Still to come
- * and wired in here when it arrives: the Express `server.ts` factory. `bun run dev` runs this file, so it becomes the
- * process entrypoint once `server.ts` exists.
+ * the only place this service reaches Postgres. `routes/` holds a ts-rest
+ * implementation of every operation the contract declares, plus the request
+ * checking and the shared error payload that make spec section 2.5 hold at
+ * runtime rather than only in the document. `server.ts` is the newest of them
+ * and the one that composes the rest: the environment, the identity check,
+ * the usage log and the routes as a single Express application, plus the two
+ * functions that bind it.
  *
  * Mount order is a property of this package rather than of any one module, and
- * `server.ts` inherits it: `clientIdentityMiddleware` first, then
- * `usageLoggerMiddleware`, then the router. The logger reads an identity the
- * auth middleware resolved and refuses a request that arrives without one, so
- * the reverse order turns every request into a `500`.
+ * `server.ts` is where it lives: `clientIdentityMiddleware` first, then
+ * `usageLoggerMiddleware`, then `express.json`, then the router. The logger
+ * reads an identity the auth middleware resolved and refuses a request that
+ * arrives without one, so the reverse order turns every request into a `500`.
+ *
+ * What is still not decided anywhere in this package is the deployment's own
+ * configuration — which consumers are registered and where card artwork is
+ * served from. Both are parameters of `startService`, for the same reason
+ * every module here takes what it needs rather than reading it: importing this
+ * file must not require a configured machine. `docker/compose.yaml` and
+ * `scripts/demo.ts` are what supply them and what run the process, so `bun run
+ * dev` on this file is a type-check of the surface rather than a running
+ * service.
  *
  * Two constraints bind everything added to this package:
  *
@@ -149,6 +159,22 @@ export {
 export type { ParseOutcome } from './routes/requestParsing';
 export { buildServiceRouter } from './routes/router';
 export type { ServiceRouter } from './routes/router';
+export {
+  createServiceApp,
+  DEFAULT_BIND_HOST,
+  describeError,
+  EPHEMERAL_PORT,
+  openServiceDatabase,
+  startHttpServer,
+  startService,
+} from './server';
+export type {
+  HttpServerOptions,
+  RunningService,
+  ServiceAppOptions,
+  ServiceDatabaseHandle,
+  ServiceOptions,
+} from './server';
 export {
   apiUsageSink,
   CONSUMER_PACKAGE_HEADER,

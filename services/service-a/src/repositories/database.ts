@@ -32,11 +32,13 @@
  * them — which is what lets `server.ts`, the suites here and
  * `packages/db`'s own throwaway server all hand over the same shape.
  *
- * `pg` is deliberately not a dependency of this package. Nothing here opens a
- * connection: a handle arrives as a parameter, exactly as `apiUsageSink` takes
- * one and `loadServiceEnv` is a function rather than a parsed singleton, so
- * importing this service still works on a machine with no database. The
- * process that builds the pool is `server.ts`, and that is where `pg` lands.
+ * `pg` is deliberately imported by nothing under `repositories/`. Nothing here
+ * opens a connection: a handle arrives as a parameter, exactly as
+ * `apiUsageSink` takes one and `loadServiceEnv` is a function rather than a
+ * parsed singleton, so importing this service still works on a machine with no
+ * database. The one module that builds a pool is `server.ts`, through
+ * `openServiceDatabase`, which is the only reason `pg` is a dependency of this
+ * package at all.
  */
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 

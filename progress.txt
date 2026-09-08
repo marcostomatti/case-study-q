@@ -3512,3 +3512,90 @@ Small and it will recur in any suite that calls `fetch`. Leaf tsconfigs set
 does not carry `RequestInit` either, so a bare annotation fails `no-undef` at
 lint time. `Parameters<typeof fetch>[1]` is the spelling that works in both —
 `fetch` itself *is* a registered global.
+
+## `services/service-a/src/server.ts` is the composition root; `service-b` copies it
+
+Every module in `services/*` takes what it needs as a parameter — that is the
+convention `loadServiceEnv`, `buildConsumerRegistry`, `apiUsageSink` and
+`cardMapper` each argue for separately — and this is the file where all of
+those arguments end. It exports `createServiceApp`, `startHttpServer`,
+`startService`, `openServiceDatabase`, `describeError`, `EPHEMERAL_PORT` and
+`DEFAULT_BIND_HOST`, all re-exported from the package's `src/index.ts`.
+`docker/compose.yaml`, `scripts/demo.ts`, the acceptance scripts and the
+service's integration suite should go through these rather than assembling an
+Express application again.
+
+- **Three entry points, in increasing order of what they assume.**
+  `createServiceApp` opens nothing and binds nothing, so a suite drives the
+  real stack against a fake handle; `startHttpServer` binds one;
+  `startService` parses the environment, opens the pool and binds the port the
+  environment names. `pg` is a dependency of the service package for that last
+  one alone — no other module in it imports a driver.
+- **The mount order is the file's whole content**, and each position is
+  load-bearing: identity, then the usage logger, then `express.json`, then the
+  routes, then `unroutedRequestHandler`, then `routeErrorHandler`. Putting the
+  body parser behind the logger is what makes a body Express could not read
+  still produce a row — recorded as `<unrouted>`, because no route ran.
+- **The deployment's own configuration is still not decided anywhere in the
+  package.** The registered consumers and the card-art base URL are parameters
+  of `startService`; `config/env.ts` declares three variables and growing a
+  fourth is that module's decision, with its own closure cases.
+- **`createExpressEndpoints` logs `[ts-rest] Initialized <METHOD> <path>` per
+  route to stdout.** `logInitialization` defaults to `true` only when the whole
+  options argument is omitted — passing any object leaves it `undefined` — so
+  `{ logInitialization: false }` is explicit rather than required. A case
+  spying on `console.log` pins it; without one the option is untested prose.
+
+## A `Proxy` database that answers exactly ONE method removes a seam
+
+Sharpens the "`Proxy` database that throws on every property read" note above.
+`createServiceApp` deliberately takes no usage-sink override, so the only way a
+suite can read an `api_usage` row back is through `apiUsageSink(db)` on the
+handle it passed. A `Proxy` that answers `insert` with a recorder and throws on
+every other access serves both roles at once: the recorded row is a statement
+about the production path, and a route that read before validating still fails
+loudly. Cheaper than an injectable sink and it cannot drift from the real one.
+
+Related reading from the mutation grid over that file: a leg that swaps two
+middleware reddened 14 of 29 cases, and the one 500-shaped case stayed **green
+for the wrong reason** (the mutation turns every request into a 500, which is
+what that case asserts). Predict the wide legs per case anyway — a case that
+survives a coarse leg because the leg produced its expected outcome by accident
+is a coverage boundary worth writing down, not a passing case.
+
+## `pg`'s refusal shape depends on how the connection string spells its host
+
+Refines the "`pg` reports a refused connection as an `AggregateError` with an
+EMPTY message" note above, which is true only sometimes — and the difference
+decides whether a suite pinning the recursive describer proves anything.
+Measured on `pg` 8.23 against a closed port:
+
+  postgres://u:p@127.0.0.1:1/db   Error          'connect ECONNREFUSED 127.0.0.1:1'
+  postgres://u:p@localhost:1/db   AggregateError ''  + two sub-errors, one per
+                                                 resolved address (::1 and 127.0.0.1)
+
+So an end-to-end case written against a literal IP never reaches the
+`AggregateError` branch: replacing the recursive describer with the naive
+`error instanceof Error ? error.message : String(error)` idiom reddened **zero**
+cases until the branch was pinned directly. Do not fix that by switching the
+fixture to `localhost` — how many addresses that resolves to is a property of
+the machine, so the case would be silently vacuous on a host where it resolves
+to one. Pin the describer with a synthetic `AggregateError` in its own cases,
+and keep the end-to-end case for "the service refuses to start at all".
+
+## Node's own `server.close()` already releases idle keep-alive connections
+
+General to anything in this repo that binds an HTTP listener and has to give
+the port back — the service suites, `scripts/demo.ts`, the acceptance scripts.
+The obvious defensive call is `server.closeIdleConnections()` before awaiting
+`close()`, because every modern HTTP client (including the `fetch` a suite
+calls) leaves a socket idle and `close()` classically waits for it. Node has
+released idle connections from `close()` itself since v19 and `engines.node`
+here is `>=22`, so the extra call changes nothing: measured on Node 22.14,
+after a keep-alive `fetch`, `close()` alone resolves in **0 ms**.
+
+The mutation grid is what found it — deleting the call reddened zero cases,
+which is the reading that separates "this line is defensive" from "this line is
+dead". Prefer `close()` alone; `closeAllConnections()` is the one to reach for
+only when in-flight requests may be abandoned, which a graceful shutdown must
+not do.
