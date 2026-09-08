@@ -1,0 +1,150 @@
+# CI for the API contract governance PoC.
+#
+# Everything runs on GitHub-hosted `ubuntu-latest`. This repository is public
+# and must stay that way for review, so no job may target a self-hosted runner.
+#
+# `vacuum` and `oasdiff` are single static Go binaries, which is the whole
+# reason the schema gates can be real pull-request checks here rather than
+# something only reproducible on a workstation. Their pinned versions live in
+# `.github/actions/gate-binaries` — a newer `vacuum` can report house-rule
+# violations an older one did not, and an unpinned gate that changes its mind
+# between runs of an unchanged tree reads as flaky rather than as an upgrade.
+#
+# `bun run pipeline:simulate` runs this same gate composition locally against
+# `docker/compose.yaml`, so a green run there predicts a green run here.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to a pull request makes the first run's answer irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: lint, types, tests, bytes
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16.4-alpine
+        env:
+          POSTGRES_USER: governance
+          POSTGRES_PASSWORD: governance
+          POSTGRES_DB: governance
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U governance -d governance"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+
+    env:
+      # packages/db's integration suite creates and drops uniquely named
+      # throwaway databases on this server; it never migrates into it directly.
+      TEST_DATABASE_URL: postgres://governance:governance@127.0.0.1:5432/governance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      # `@marcos-corp/web-*`'s toolchain needs Node on PATH for bun x shebang
+      # handling, and `engines` pins the floor at 22.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: bun install --frozen-lockfile
+
+      # The contract packages' own suites shell out to both gate binaries, so
+      # `test:all` needs them even though the schema gates are a separate job.
+      - name: Install pinned gate binaries
+        uses: ./.github/actions/gate-binaries
+
+      - run: bun run lint:all
+      - run: bun run check-types:all
+      - run: bun run test:all
+      - run: bun run gate:control-bytes
+
+  contracts:
+    name: contract gates (emit, lint, diff, dependency)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # oasdiff compares the working emit against the published baseline
+          # committed in the same tree, so no history beyond the tip is needed.
+          fetch-depth: 1
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - run: bun install --frozen-lockfile
+
+      - name: Install pinned gate binaries
+        uses: ./.github/actions/gate-binaries
+
+      # Emit -> lint -> diff -> dependency over every packages/contracts-*,
+      # then the pin gate over every consumer. Blocking, in spec §8 order.
+      - name: Run the spec §8 gates
+        run: bun run pipeline:simulate
+
+  acceptance:
+    name: acceptance criteria
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - run: bun install --frozen-lockfile
+
+      - name: Install pinned gate binaries
+        uses: ./.github/actions/gate-binaries
+
+      # 1, 2, 3 and 5 need no running stack: each mutates a tracked file, gates
+      # it, and restores it. 4 needs the demo stack and runs under `demo:up`.
+      - name: Criteria 1, 2, 3 and 5
+        run: |
+          set -euo pipefail
+          for script in 01-consumer-adds-field \
+                        02-removal-is-blocked \
+                        03-db-derived-export-is-blocked \
+                        05-pin-bump-is-reviewable; do
+            echo "::group::${script}"
+            bun "scripts/acceptance/${script}.ts"
+            echo "::endgroup::"
+          done
+
+      - name: Criterion 4 — usage query, against the demo stack
+        run: |
+          set -euo pipefail
+          bun run demo:up
+          bun scripts/acceptance/04-usage-query.ts
+
+      - name: Tear the stack down
+        if: always()
+        run: docker compose -f docker/compose.yaml down -v
+
+      # An acceptance script that mutates a tracked file and crashes before
+      # restoring it leaves the tree dirty. That would be invisible otherwise:
+      # every script above can exit 0 while having left a file rewritten.
+      - name: The working tree is clean after every mutation
+        run: git diff --exit-code
