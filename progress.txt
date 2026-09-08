@@ -3130,3 +3130,168 @@ growing a second spelling of the `companies` fold.
   `resolveCardArtUrl` throws on a bad base. Nothing else in the request path
   checks it, and one card's spend measured against another card's cap is a
   number that looks entirely plausible on the screen.
+
+## `@marcos-corp/db/testing` is the third export subpath, and it needed no install
+
+`packages/db`'s `exports` map now carries `./testing` ->
+`src/testing/throwawayDatabase.ts`, alongside `.` and `./seed`. Every later
+suite that needs a real Postgres — `service-b`'s due-invoice test, acceptance
+script 04, `scripts/demo.ts` — should import `startThrowawayPostgres`,
+`MIGRATIONS_DIR` and `THROWAWAY_POSTGRES_TIMEOUT_MS` from there.
+
+Three readings that make the addition safe, each cheap and each re-runnable
+after the next subpath:
+
+- **`pg` resolves for the importer even though the importer does not declare
+  it.** Same mechanism as `@marcos-corp/db/seed`: the specifier is resolved
+  relative to `packages/db/src/testing/throwawayDatabase.ts`, so it finds
+  `packages/db/node_modules/pg`. Verified by running a `services/service-a`
+  script that stands a cluster up, with `pg` unresolvable from that package.
+- **`bun install` says `no changes` and no lockfile line moves.** An `exports`
+  subpath is a resolution fact, not a dependency-graph one.
+- **`bun run db:generate` still prints `No schema changes, nothing to
+  migrate`.** That is the control the seed's own note asks for: a module
+  importing a driver must not become reachable from `src/index.ts`, which
+  drizzle-kit executes for its exports. A subpath is not, which is the whole
+  reason to use one.
+
+## The repository layer names a driver on purpose; the port argument stops here
+
+`services/service-a/src/repositories/database.ts` exports `ServiceDatabase =
+NodePgDatabase` and every function under `repositories/` takes it. That
+deliberately contradicts the shape `telemetry/usageLogger.ts` uses, and the
+split is worth carrying rather than re-deciding:
+
+- A module that hands over six values through one `INSERT` states a one-method
+  port, so no driver reaches the exported surface of a module whose job is not
+  databases. That is `UsageDatabase`.
+- A module issuing `SELECT`s with predicates, ordering, limits, offsets and an
+  `UPDATE ... RETURNING` cannot. A structural interface wide enough is a second,
+  worse copy of Drizzle's query builder, and it agrees with whatever fake a
+  suite hands it and with nothing else. So the driver is in the signature and
+  the suites run against a real Postgres.
+
+The line that keeps the two together is in `database.test-d.ts`:
+`expectTypeOf<ServiceDatabase>().toExtend<UsageDatabase>()` plus
+`expectTypeOf<ThrowawayDatabase['db']>().toExtend<ServiceDatabase>()`. Without
+the first, `server.ts` needs two connections or a cast; without the second the
+database-backed suites exercise a shape production never builds. Proven live by
+mutation: widening the pinned schema parameter gives tsc exit 2 with TS2344 in
+that file alone.
+
+## Drizzle's `count()` returns a NUMBER, but not because the SQL says so
+
+Measured on drizzle-orm 0.45.2 against a real server. `db.select({ total:
+count() })` emits a bare `count(*)` — **no** `::int` — and still hands back a
+JavaScript `number`, because the helper carries `.mapWith(Number)`. So the
+`::int` cast the earlier note prescribes is unnecessary when the aggregate goes
+through `count()`, and both spellings give `57` rather than `'57'`.
+
+Worth knowing which half is doing the work: with the helper, a strict
+`toBe(57)` is a check on drizzle's mapping, not on the column types. The
+column-type claim still needs `toStrictEqual` over a whole row, where an
+`integer` widened to `bigint` or `numeric` arrives from `pg` as a string.
+
+Neighbouring trap the same suite closed: `rows[0]?.total ?? 0` on an ungrouped
+aggregate is unreachable defensive code that, if ever reached, reports "there
+are no rows". Throw instead — one case, and it is the only thing separating a
+count query that failed from a collection that is empty.
+
+## A plan is assertable, and `enable_seqscan = off` alone is not enough
+
+`transactionRepository.test.ts` reads `EXPLAIN` out of Postgres to prove the
+ascending index `packages/db` declares is actually reachable by the repository's
+`ORDER BY ... DESC`. That decision is invisible to every other gate in the
+verification order, so this is the only place it is verified rather than
+asserted in prose. Measured on postgresql@14 with 57 rows:
+
+  seqscan off only            still a Bitmap Index Scan + Sort — a bitmap scan
+                              loses the index's ordering, so every variant
+                              plans identically and the cases say nothing
+  seqscan + bitmapscan off    the plans separate:
+    ORDER BY booked_at DESC              Index Scan Backward, no sort node
+    ORDER BY booked_at DESC, id DESC     Index Scan Backward + Incremental Sort
+                                         (`Presorted Key: booked_at`)
+    ORDER BY booked_at DESC NULLS LAST   forward Index Scan + a full Sort
+
+Four things that make such a case honest rather than decorative:
+
+- **`SET LOCAL` inside `db.transaction`**, never a bare `SET`: a pooled
+  connection otherwise takes the setting on a different backend than the
+  `EXPLAIN`, and it leaks into later cases.
+- **The `NULLS LAST` variant in the same suite as the control.** A plan
+  assertion with nothing to contrast against passes on a planner that sorts
+  everything.
+- **Match `/->\s+Sort\b/` for "a full sort".** `Incremental Sort` contains the
+  substring `Sort` and is the *good* outcome; the arrow-plus-name form
+  discriminates.
+- **Tie the explained text to the module's own clause.** Export the order-by
+  array (`NEWEST_FIRST` here), render it with `.toSQL()` in a case and assert
+  it carries no `nulls`. Otherwise the EXPLAIN is about a query hand-written in
+  the suite, and the module is free to emit something else — measured: swapping
+  the module's clause for `desc nulls last` reddens only that case.
+
+Cost of the `id` tie-break, since it is the obvious thing to cut: an
+Incremental Sort over the presorted `booked_at`, which only reorders inside a
+group of rows sharing an instant. Not optional either — offset paging over a
+partial order hands one row to two pages and skips another, and every
+individual page still looks correct.
+
+## Two scoping legs that redden NOTHING unless the fixture has a neighbour
+
+Both cost a vacuous case here, and both generalise to any repository suite.
+
+- **"counts one company and not the table" cannot be made by comparing two
+  single-company databases.** Dropping the `WHERE` from the count returns each
+  database's own total, which is the same number. The leg only reddens once
+  **two** companies live in **one** database.
+- **A tie-break case does not double as a scoping case unless the neighbour's
+  identifiers sort into the tie.** With the neighbour's rows booked at the same
+  instant but sorting *below* the batch, dropping the list query's company
+  filter left the first N rows unchanged and reddened zero cases. Moving those
+  identifiers above the batch made the same leg redden two.
+
+General form: for a leg that removes a filter, ask what the fixture would have
+to contain for the filter's absence to change an answer, and put it there
+before writing the case.
+
+## `src/testing/<helper>.ts` beside a service's suites is gated; `*.test.ts` is not
+
+`services/service-a/src/testing/seededDatabase.ts` stands a migrated, seeded
+Postgres up for the repository suites. Where it lives is the point: under
+`src/`, so the leaf tsconfig's `include: ["src", "*.ts"]` covers it and its
+`exclude: ["**/*.test.ts"]` does not — confirmed with `tsc --listFiles`. A
+helper parked beside the suites as `*.test.ts` would be linted and never
+type-checked.
+
+It is deliberately **not** re-exported from the package's `src/index.ts`:
+importing a service package must not reach a module that opens database
+connections, which is the same rule `loadServiceEnv` being a function and
+`apiUsageSink` taking a handle already encode. Say so in the package's
+`src/index.ts` header, or the omission reads as a miss.
+
+Shape worth copying: one `startSeededDatabase()` returning `{ db,
+createEmptyDatabase(), stop() }`. The second is what every "returns null" case
+needs — an absence asserted against the seeded database only says the seed does
+not happen to contain the row.
+
+## An `UPDATE ... RETURNING` guarded in SQL is the only way a state check holds
+
+`activateCard` puts `inArray(cards.lifecycleStatus, ACTIVATABLE_...)` in the
+`WHERE` clause rather than trusting a route's prior read. Two properties, and
+the second is invisible to any single-threaded suite:
+
+- Zero rows back means "no such card, not yours, or not in a state that can be
+  activated" — three cases the layer cannot distinguish and must not, since the
+  contract folds "not yours to see" onto `not_found` anyway. The route reads
+  first to split `404` from `409`.
+- Between that read and the write another request can activate the same card. A
+  blind `UPDATE ... SET` answers both callers `200` and overwrites the first
+  `activated_at`. The guard makes the second match nothing. No transaction and
+  no row lock: a single `UPDATE` re-checks its predicate against the row it
+  blocked on.
+
+The case that proves the second is "activate, then activate again with a
+different instant, then re-read and assert the **first** instant survived".
+Asserting only the `null` passes against an implementation that updated the row
+and returned nothing.

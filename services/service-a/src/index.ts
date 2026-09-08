@@ -5,13 +5,14 @@
  * What has landed: `config/env.ts`, the Zod-parsed environment,
  * `auth/clientIdentity.ts`, the consumer identity spec section 2.3 requires on
  * every request, `telemetry/usageLogger.ts`, the `api_usage` row it writes for
- * each one, and `mapping/`, the Drizzle-row-to-contract translation that keeps
+ * each one, `mapping/`, the Drizzle-row-to-contract translation that keeps
  * the database schema out of the published payloads — including
  * `dashboardMapper.ts`, which assembles the mobile view's whole payload and
- * computes the two figures on it that no column holds. Still to come and wired
- * in here as they arrive: the repositories, the ts-rest routes and the Express
- * `server.ts` factory. `bun run dev` runs this file, so it becomes the process
- * entrypoint once `server.ts` exists.
+ * computes the two figures on it that no column holds — and `repositories/`,
+ * the only place this service reaches Postgres. Still to come and wired in
+ * here as they arrive: the ts-rest routes and the Express `server.ts` factory.
+ * `bun run dev` runs this file, so it becomes the process entrypoint once
+ * `server.ts` exists.
  *
  * Mount order is a property of this package rather than of any one module, and
  * `server.ts` inherits it: `clientIdentityMiddleware` first, then
@@ -31,9 +32,12 @@
  *
  * Re-exporting a module here must stay side-effect free. `loadServiceEnv` is a
  * function rather than a parsed singleton for exactly that reason,
- * `buildConsumerRegistry` is one for the same reason, and `apiUsageSink` takes
- * a database rather than opening one: importing this file must not require an
- * environment, a configured consumer registry or a reachable Postgres.
+ * `buildConsumerRegistry` is one for the same reason, and `apiUsageSink` and
+ * every repository take a database rather than opening one: importing this
+ * file must not require an environment, a configured consumer registry or a
+ * reachable Postgres. `src/testing/` is the one directory deliberately left
+ * out of this file — it stands a database up, which is exactly what importing
+ * this package must not do.
  */
 
 export {
@@ -80,6 +84,37 @@ export {
   toContractTransaction,
 } from './mapping/transactionMapper';
 export type { MerchantCategoryRange } from './mapping/transactionMapper';
+export {
+  ACTIVATABLE_LIFECYCLE_STATUSES,
+  activateCard,
+  ACTIVATED_LIFECYCLE_STATUS,
+  findCardById,
+  findCompanyCard,
+} from './repositories/cardRepository';
+export type { CardActivation, CardLookup } from './repositories/cardRepository';
+export { findCompanyById, listCompanies } from './repositories/companyRepository';
+export type { ServiceDatabase } from './repositories/database';
+export {
+  assertPageRequest,
+  pageRequestSchema,
+  PageRequestError,
+  readTotal,
+} from './repositories/pagination';
+export type { Page, PageRequest } from './repositories/pagination';
+export {
+  DASHBOARD_RESET_PERIOD,
+  findCurrentSpendLimit,
+} from './repositories/spendLimitRepository';
+export type { SpendLimitLookup } from './repositories/spendLimitRepository';
+export {
+  countCompanyTransactions,
+  findDashboardTransactions,
+  listCompanyTransactions,
+} from './repositories/transactionRepository';
+export type {
+  CompanyTransactionCriteria,
+  DashboardTransactionCriteria,
+} from './repositories/transactionRepository';
 export {
   apiUsageSink,
   CONSUMER_PACKAGE_HEADER,

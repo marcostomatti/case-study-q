@@ -35,6 +35,16 @@
  * seed compiles, which is not the claim anyone is reading it for. Doing the
  * work in one `beforeAll` means an unprovisioned machine reports a single
  * pointed error rather than one lookalike failure per case.
+ *
+ * ## How other packages reach this
+ *
+ * As `@marcos-corp/db/testing`, a subpath of this package's `exports` map and
+ * deliberately not a re-export from `src/index.ts` — the same argument
+ * `src/seed.ts` makes at length. That file is the `schema` entry of
+ * `drizzle.config.ts` and drizzle-kit executes it for its exports, so a module
+ * that imports `pg` must not be reachable from it or `bun run db:generate`
+ * grows a database driver on its path. Confirmed after adding the subpath:
+ * `db:generate` still prints `No schema changes, nothing to migrate`.
  */
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PoolConfig } from 'pg';
