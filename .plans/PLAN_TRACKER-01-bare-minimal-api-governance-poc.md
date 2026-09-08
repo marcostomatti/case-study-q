@@ -331,7 +331,7 @@ script that never runs is not.
 
 - [x] Update `README.md` Task 2 sections with the database schema rationale, the payload-shape rationale for the aggregated dashboard endpoint, and the API structure, each linking to the code that implements it
 - [x] Add `docs/demo-script.md` walking the 30-minute demo in order — bring the stack up, show the consumer-authored PR passing gates, show the mock serving it, show the removal being blocked, show the usage query — with the exact commands for each beat
-- [ ] Update `AGENTS.md` with the populated workspace map, the per-package conventions that landed, and the verification order including `bun run pipeline:simulate`
+- [x] Update `AGENTS.md` with the populated workspace map, the per-package conventions that landed, and the verification order including `bun run pipeline:simulate`
 - [x] Run the full verification order plus `bun run pipeline:simulate` and record every gate's exit code and output in the close-out notes
 - [ ] Take the mergeability reading with `git merge-tree --write-tree origin/main HEAD` and assemble the close-out notes covering the gate captures, the test plan and any recorded debt
 
