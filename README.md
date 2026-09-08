@@ -48,9 +48,21 @@ Understanding that a challenge is only the result of an expectation meeting a re
 
 ### Task 1: Presentation
 
-Look [here](./PRESENTATION.md) for the presentation deliverable.
+Look [here](./PRESENTATION.md) for the presentation deliverable. I spent 3~4hs in research and writing the ideal implementation. Research consisted in some practical and small implementations to check usability and ideal combination without going outside of a reasonable scope for the implementation. 
 
 ### Task 2: API Implementation
+
+1. Based on the presentation I created a [technical feature spec](.specs/01-bare-minimal-api-governance-poc.md) with feature requirements, extra context and alternatives on implementation if required. 
+2. From the spec I generated a [detailed plan](.plans/PLAN-01-bare-minimal-api-governance-poc.md).
+The actual code implementation was executed via a ralph loop triggering individual agent sessions on a per task basis. 
+3. For this I ported some tooling/scripts I made for some of my personal projects. I intended to save time as I was already reaching the 5hs marker, and I was genuinely tempted to check how the tooling performed on a bare minimal project from scratch with little existing context other than requirements.
+
+> [!note] During the execution I identified interesting issues with how the loop behaved in this project. 
+> For example:
+> - This [context files](./progress.txt) bloated way beyond expectation (in [this historical](https://github.com/marcostomatti/case-study-q/blob/cb26e227a0f086179b586f2a0434b396d05144b2/progress.txt) commit it reached ~4k lines) that [some skills](.claude/skills/progress-hygiene/SKILL.md) specifically should have capped early on. 
+> - Found some over engineered bits around auth and security checks, way beyond a PoC implementation, eg: something that could have easily been a mock with a comment. The main driver were seamingly simple, rather innocuous skill rules that are not as impactful on a fully implemented project. Thats the case of [this client identity checks](services/service-a/src/auth/clientIdentity.ts). This is initially the product of a [simple skill rule](services/service-a/src/auth/clientIdentity.ts#L26) that I brought from my project. In my project only ensure an existing middleware is introduced. Here, this instruction called my over protective auth and security agents from my user scope and started building everything that was missing. 
+> 
+> These findings ultimately prompted some fixes and improvements on the tooling that will soon be available back in my [source project](https://github.com/marcostomatti/template-agentic-research).
 
 ## Setup
 
@@ -63,11 +75,11 @@ bun install
 That alone runs the linter, the type checker and the byte gate. Three things
 unlock the rest:
 
-| Needed for | Install |
-| --- | --- |
-| The full test suite | Docker (see **Database** below) |
-| The schema gates | `brew install daveshanley/vacuum/vacuum`, then `brew tap oasdiff/homebrew-oasdiff && brew install oasdiff` |
-| The demo stack and the usage query | Docker Desktop running |
+| Needed for                         | Install                                                                                                    |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| The full test suite                | Docker (see **Database** below)                                                                            |
+| The schema gates                   | `brew install daveshanley/vacuum/vacuum`, then `brew tap oasdiff/homebrew-oasdiff && brew install oasdiff` |
+| The demo stack and the usage query | Docker Desktop running                                                                                     |
 
 Both binaries are single static Go files — no runtime, no service. CI installs
 the same pinned versions from
@@ -305,13 +317,13 @@ retroactively.
 Five gates run per PR, in this fixed order, each blocking
 ([`docs/ci.md`](./docs/ci.md)):
 
-| # | Gate | Blocks |
-| - | ---- | ------ |
-| 1 | **Emit** — build the OpenAPI artifact from the schemas | An unrepresentable construct |
-| 2 | **Lint** — `vacuum` against the house ruleset | Typeless schemas, implicit `additionalProperties`, enums with no unknown member, deprecations with no sunset date |
-| 3 | **Diff** — `oasdiff` against the last published artifact | Any breaking change |
-| 4 | **Dependency** — no contract package imports `packages/db` | A database-derived contract |
-| 5 | **Pins** — every consumer pins exactly | A range specifier |
+| #   | Gate                                                       | Blocks                                                                                                            |
+| --- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1   | **Emit** — build the OpenAPI artifact from the schemas     | An unrepresentable construct                                                                                      |
+| 2   | **Lint** — `vacuum` against the house ruleset              | Typeless schemas, implicit `additionalProperties`, enums with no unknown member, deprecations with no sunset date |
+| 3   | **Diff** — `oasdiff` against the last published artifact   | Any breaking change                                                                                               |
+| 4   | **Dependency** — no contract package imports `packages/db` | A database-derived contract                                                                                       |
+| 5   | **Pins** — every consumer pins exactly                     | A range specifier                                                                                                 |
 
 Order is a governance decision, not a convenience: emit failing first means a
 lint error is never reported against a document that could not be built.
