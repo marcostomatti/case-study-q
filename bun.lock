@@ -6,6 +6,7 @@
       "name": "marcos-corp",
       "dependencies": {
         "@marcos-corp/contract-tooling": "^0.1.0",
+        "pg": "^8.23.0",
       },
       "devDependencies": {
         "@eslint/js": "^10.0.1",
@@ -13,6 +14,7 @@
         "@stylistic/eslint-plugin": "^5.10.0",
         "@types/bun": "^1.4.0",
         "@types/node": "^26.4.1",
+        "@types/pg": "^8.15.6",
         "@typescript-eslint/parser": "^8.69.0",
         "eslint": "^9.39.4",
         "eslint-import-resolver-typescript": "^4.4.4",

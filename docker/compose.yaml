@@ -1,0 +1,81 @@
+# The demo stack: Postgres, a Prism mock derived from the published contract,
+# and service-a itself.
+#
+#   bun run demo:up          brings this up, migrates, seeds and prints the URLs
+#   docker compose -f docker/compose.yaml down -v   tears it down
+#
+# The mock is the point of the whole setup. It serves `contracts-service-a`'s
+# emitted OpenAPI document, so a consumer can build against a contract version
+# the moment it merges — before any handler exists. Running it beside the real
+# service is what lets a demo show both answering the same contract.
+#
+# Every port binds to 127.0.0.1 explicitly. A bare `5432:5432` binds 0.0.0.0,
+# which publishes a seeded database to the local network.
+#
+# The published ports are deliberately NOT 5432/3000/4010. Those are the three
+# most likely ports to be already taken on a developer machine — a local
+# Postgres on 5432 is what this stack first collided with — and "address
+# already in use" is a poor first impression in a demo. Override any of them
+# with POSTGRES_PORT / SERVICE_A_PORT / MOCK_SERVICE_A_PORT.
+#
+# Compose gives the SHELL environment precedence over any --env-file, so an
+# exported POSTGRES_PASSWORD silently overrides the default below. Read the
+# effective values with `docker compose -f docker/compose.yaml config`.
+
+name: qred-contract-governance
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-governance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-governance}
+      POSTGRES_DB: ${POSTGRES_DB:-governance}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # `pg_isready` answers before the server finishes its first-run
+      # initialisation, so the check names the database explicitly.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-governance} -d ${POSTGRES_DB:-governance}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  mock-service-a:
+    image: stoplight/prism:5.14.2
+    restart: unless-stopped
+    command: >-
+      mock --host 0.0.0.0 --port 4010
+      /contracts/openapi.json
+    ports:
+      - "127.0.0.1:${MOCK_SERVICE_A_PORT:-54010}:4010"
+    volumes:
+      # Read-only on purpose: the mock consumes the published contract, it does
+      # not get to edit it.
+      - ../packages/contracts-service-a/openapi:/contracts:ro
+
+  service-a:
+    image: oven/bun:1.3.14-alpine
+    restart: unless-stopped
+    working_dir: /repo
+    # src/index.ts is a side-effect-free re-export barrel; running it exits 0
+    # immediately and restart:unless-stopped turns that into a silent crash loop.
+    command: ["bun", "services/service-a/src/main.ts"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-governance}:${POSTGRES_PASSWORD:-governance}@postgres:5432/${POSTGRES_DB:-governance}
+      PORT: "3000"
+      CONTRACT_VERSION: ${CONTRACT_VERSION:-0.1.0}
+    ports:
+      - "127.0.0.1:${SERVICE_A_PORT:-53000}:3000"
+    volumes:
+      - ..:/repo
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
