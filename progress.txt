@@ -2493,3 +2493,102 @@ step and in acceptance script 01. `scripts/emit.ts` does
 first baseline therefore needs `mkdir -p openapi/published` before the `cp`,
 and a publish step that assumes the directory exists fails on exactly the run
 that creates a package's first version.
+
+## A leaf's `scripts/` is outside vitest's `include` too — widen it or the suite is collected by nothing
+
+Completes the "a leaf's `scripts/` directory is linted but NOT type-checked"
+note above with the third gate. Every leaf `vitest.config.ts` here sets
+`include: ['src/**/*.test.ts']`, so a `scripts/<x>.test.ts` is **not collected
+at all** — vitest reports the leaf's other suites passing and says nothing
+about the file. Both readings that catch it, and neither is the exit code:
+
+  Test Files N passed (N)   -> N must go up by one when the file lands
+  bunx vitest run <path> --reporter=verbose  -> names every case it collected
+
+`packages/contracts-service-a/vitest.config.ts` now reads
+`['src/**/*.test.ts', 'scripts/**/*.test.ts']`. `contracts-service-b` needs the
+same line with its emit script, and so does any leaf that grows a `scripts/`
+suite. The `**/*.test.ts` tsconfig exclude still applies inside `scripts/`, so
+such a file is linted, collected by vitest and **not** type-checked — hand-run
+tsc against it once with the leaf's flags per the note above.
+
+## The byte-identity test for a contract package: what it owns, and the two halves
+
+`packages/contracts-service-a/scripts/emit.test.ts` is the shape
+`contracts-service-b`'s equivalent should copy. It is the only thing in the
+four-gate order that ever opens `openapi/openapi.json` (see the "committed
+`openapi/` artifacts are read by NO lint gate" note), so a stale artifact fails
+there or nowhere.
+
+- **Re-emit through the emit script's own exports** (`buildDocument`,
+  `serializeDocument`, `OPENAPI_DOCUMENT_PATH`), never through a second copy of
+  the metadata — that compares the artifact against the test's own copy of the
+  same decisions and stays green while the two drift.
+- **Two comparisons, in this order.** `JSON.parse(committed)` vs
+  `JSON.parse(fresh)` names the node that drifted; the raw string compare is
+  the claim proper and additionally covers key order, indent and the trailing
+  newline. Measured: re-indenting the committed file to 4 spaces reddens only
+  the byte case, which is what says the structural case does not subsume it.
+- **Assert `OPENAPI_DOCUMENT_PATH` still ends in the tracked path.** Everything
+  in the emit script resolves from `import.meta.url`; byte-identity against a
+  file nobody ships proves nothing, and repointing the constant reddens that
+  case first.
+- **Read the committed file inside a case, not at module scope.** A throw out
+  there makes all 13 cases *vanish* rather than one going red, and "the
+  artifact is missing" is the failure the file exists to report.
+- **Do not compare `openapi/published/<version>.json` against the working
+  emit.** A baseline is frozen at the version it was published under, so on any
+  pull request that bumps the version the two legitimately differ and the new
+  baseline does not exist yet. That invariant belongs to the CI publish step on
+  merge.
+
+## "vacuum reported nothing" needs one control per rule, and the controls need a clean base
+
+The lint half of the same file, and the general shape for any "our document
+passes the house ruleset" claim. A `given` that matches no node in *this*
+document is silent coverage loss, not an error, so the clean case is only worth
+reading beside a mutation per rule that must make exactly that rule fire.
+Measured against this document and vacuum 0.30.3 — each reports its own code
+and no other, and `additionalProperties` deleted from a `$ref`d schema yields
+**three** findings, so assert the code SET:
+
+  delete `type` from Error.message         house-no-typeless-schema
+  delete Card.additionalProperties         house-object-additional-properties-explicit
+  drop `unknown` from the card state enum  house-enum-has-unknown-member
+  set `deprecated: true` on an operation   house-deprecated-requires-sunset
+  delete an `operationId`                  house-operation-id-and-shared-error-schema
+  make a `type` a ["string","null"] array  house-no-null
+
+Three properties worth copying, each proven by a leg that reddened exactly the
+predicted cases with the total holding at 13:
+
+- **Closure both ways**, reusing `lint.test.ts`'s two-space rule-id extractor
+  and its negative control. Renaming a rule in the ruleset reddened its control
+  plus both closure cases; widening the extractor to any indentation reddened
+  the extractor case plus the every-rule case.
+- **Guard that the mutation applied** (`expect(mutated).not.toEqual(parsed
+  base)`). Changing one control's filter to `'Unknown'` reddened that control
+  alone — without the guard it would have linted clean and passed.
+- **Scope the vacuum `beforeAll` to the ruleset `describe` only.** With
+  `VACUUM_BIN` pointed at nothing: one pointed `lint gate cannot run` error, 7
+  skipped, and the 3 byte-identity plus 3 closure cases still ran green. A
+  file-level `beforeAll` would skip the stale-artifact claim on exactly the
+  machines that most need it.
+
+One prediction that was wrong and is worth knowing before reading such a grid:
+making the **source** violate a rule (dropping `unknown` from `CARD_STATES`
+with no re-emit) reddens 9 of 13, not 4. Every control asserts its mutation is
+the *only* violation, so a base-document breach reddens all six of them plus
+the clean case plus both artifact cases. That is the right, loud outcome — it
+says the document is broken rather than that one control drifted — but a grid
+that predicted "4 red" reads it as a failure of the suite.
+
+## Restoring a mutated file after a leg that `cd`s: use absolute paths
+
+Sharpens the Bash-cwd trap above with the exact way it corrupted a grid here. A
+`run_leg` helper that `cd`s into a package leaves the shell there, so the
+`git checkout -- <relative path>` after it fails with `error: pathspec ... did
+not match any file(s) known to git` — and the **next** leg then runs with the
+previous mutation still applied and reports a red set that is the union of two
+legs. Absolute paths in every mutate/restore pair, and read
+`git status --porcelain` between legs rather than after all of them.
