@@ -2419,3 +2419,77 @@ Sharpens the `rm -rf` note above, which reads as being about a fixed
 command** — so the six mutation reports it was appended to never ran either,
 and the failure looks like the probe rather than the cleanup. Leave the scratch
 directory behind: `mktemp -d` is unique per run and nothing collides.
+
+## The committed `openapi/` artifacts are read by NO lint gate — only the byte gate
+
+Measured on `packages/contracts-service-a` the moment the artifacts landed, and
+it holds for every `packages/contracts-*` package: the leaf
+`eslint.config.mjs` ignores `openapi/**` and the root one ignores
+`packages/**`, so `bunx eslint . -f json` in the leaf reads **27 files and
+zero of them under `openapi/`**. `tsc` never saw them either — they are JSON.
+
+So the two most reviewer-facing files in a contract package (`openapi.json` and
+`openapi/published/<version>.json`) are outside `lint`, `lint:all` and
+`check-types` entirely. The only gate that ever opens them is
+`gate:control-bytes`, and that one scans **tracked** files, so a freshly
+emitted artifact is read by nothing at all until it is committed.
+
+Two consequences for the tasks that follow:
+
+- **A green four-gate run after emitting is not evidence the document is
+  well-formed.** Whatever check the artifact deserves — the house ruleset, the
+  byte-identity test, a JSON parse — has to be run by hand in the same task, or
+  written as a suite in the package (which is what the byte-identity task is
+  for). Same shape as the "no lint gate reads YAML" note above.
+- **Prose added under `openapi/` is unlinted**, unlike everything under
+  `docs/`. A README there gets none of the markdown rules and none of
+  `house/no-unsafe-unicode`. `latestPublishedSpec` ignores non-`.json` files,
+  so such a README is safe to add; it is just ungated.
+
+Worth pre-checking the artifact for what the byte gate will reject before
+committing rather than after, since a rejection lands as a failed gate on a
+generated file nobody edited: `JSON.stringify` escapes C0 bytes to `\uXXXX`, so
+the realistic risk is only in prose the metadata carries. Both files here are
+pure ASCII, 23230 bytes, zero non-ASCII code points.
+
+## The FIRST published baseline makes gate 3 pass vacuously — invert it to read it
+
+The publish step copies the working emit to
+`openapi/published/<version>.json`, so on the day a baseline is first written
+base and revision are the **same bytes** and `oasdiff` cannot report anything.
+`runGates` says `diff: passed`, which reads as "the change is safe" and
+actually means "there was no change". The same vacuity returns at every version
+bump where the emit did not move, and at the CI publish step.
+
+`skipped` versus `passed` distinguishes "no baseline published" from "a
+baseline was compared", and that much is worth reading — but neither says the
+gate can still fail. The pair that does, run against a scratch contract package
+under `mktemp -d` (the shape recorded above: a `package.json`, one `src/*.ts`,
+and `openapi/published/<v>.json`):
+
+  baseline = the emit + one EXTRA required response property
+      -> `diff: failed`, `dependency: not-run`, reasons naming
+         `response-required-property-removed` and the operations it breaks
+  same package, baseline deleted
+      -> `diff: skipped`, `dependency: passed`
+
+The direction is the thing to get right and is easy to invert: to make the
+diff gate fire, the **baseline** must carry what the revision lacks. Adding a
+field to the revision is the additive change spec §6.1 is built around and
+reports nothing. Same asymmetry as the "removing an OPTIONAL response property
+is not breaking" note above — the planted property has to be in `required`.
+
+Note the second leg also proves the first is not passing for an unrelated
+reason: the identical package with only the baseline removed changes the gate's
+answer, so gate 3 is demonstrably reading that file and not resolving somewhere
+else. Skills: `refusal-case-needs-a-positive-control`,
+`accepting-cases-need-inverted-legs`.
+
+## Emitting creates `openapi/` but not `openapi/published/` — mkdir before copying
+
+Small and it will recur in `contracts-service-b`'s emit task, in the CI publish
+step and in acceptance script 01. `scripts/emit.ts` does
+`mkdirSync(dirname(OPENAPI_DOCUMENT_PATH))`, which is `openapi/` only. The
+first baseline therefore needs `mkdir -p openapi/published` before the `cp`,
+and a publish step that assumes the directory exists fails on exactly the run
+that creates a package's first version.
