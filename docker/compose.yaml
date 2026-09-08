@@ -25,6 +25,20 @@
 name: qred-contract-governance
 
 services:
+  # The project's ONE Postgres. It serves both roles, separated by database
+  # rather than by instance — this is a proof of concept, and a second server
+  # would be two things to start, two ports to keep free and two ways for a
+  # demo to fail.
+  #
+  #   POSTGRES_DB (governance)  the demo's seeded database
+  #   TEST_DATABASE_URL         the suites connect here and create their OWN
+  #                             uniquely named throwaway databases per run,
+  #                             then drop them; they never write to `governance`
+  #
+  # POSTGRES_USER is the superuser of this instance — the postgres image makes
+  # it one — which is what lets the suites CREATE DATABASE. Deliberate and fine
+  # for a PoC whose whole dataset is a seed script; a real deployment would
+  # issue a role with CREATEDB and nothing else.
   postgres:
     image: postgres:16.4-alpine
     restart: unless-stopped

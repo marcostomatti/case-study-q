@@ -29,7 +29,9 @@
     "pipeline:simulate": "bun scripts/pipeline-simulation.ts",
     "demo:up": "bun scripts/demo.ts",
     "test:gates:all": "bun run --filter '@marcos-corp/*' test:gates",
-    "contracts:publish": "bun scripts/publish-contracts.ts"
+    "contracts:publish": "bun scripts/publish-contracts.ts",
+    "db:up": "docker compose -f docker/compose.yaml up -d --wait postgres",
+    "db:down": "docker compose -f docker/compose.yaml down -v"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

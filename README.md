@@ -60,12 +60,13 @@ cd case-study-q
 bun install
 ```
 
-That is enough to run **everything except the schema gates**. Two extra
-binaries and Docker unlock the rest:
+That alone runs the linter, the type checker and the byte gate. Three things
+unlock the rest:
 
 | Needed for | Install |
 | --- | --- |
-| The schema gates (`vacuum`, `oasdiff`) | `brew install daveshanley/vacuum/vacuum` and `brew tap oasdiff/homebrew-oasdiff && brew install oasdiff` |
+| The full test suite | Docker (see **Database** below) |
+| The schema gates | `brew install daveshanley/vacuum/vacuum`, then `brew tap oasdiff/homebrew-oasdiff && brew install oasdiff` |
 | The demo stack and the usage query | Docker Desktop running |
 
 Both binaries are single static Go files — no runtime, no service. CI installs
@@ -74,12 +75,54 @@ the same pinned versions from
 match them locally, because a newer `vacuum` reports rule violations CI does
 not.
 
-## Reproducing a green pipeline
+### Database
 
-Two separate things, deliberately. **Hygiene** must be green on a bare checkout
-with nothing but `bun install`:
+`bun run test:all` needs a Postgres. Fourteen of the tests are integration
+tests that migrate a real database, seed it, and read the mobile view's figures
+back out — `5 400/10 000 kr` and `54 more items` are asserted against SQL, not
+against a mock. Without a database those fourteen are **skipped and the run is
+red**, deliberately: a missing database must not be mistakable for a passing
+suite.
+
+One Postgres serves the whole project. It is the same container the demo uses,
+started on its own:
 
 ```bash
+bun run db:up     # just Postgres, from docker/compose.yaml
+bun run db:down   # stop it and drop the volume
+```
+
+Then point the suites at it:
+
+```bash
+export TEST_DATABASE_URL='postgres://governance:governance@127.0.0.1:55432/governance'
+bun run test:all
+```
+
+**One instance, separate databases.** The suites never write to `governance` —
+they create a uniquely named throwaway database per run and drop it afterwards,
+so a test run and a demo can share the server without touching each other's
+data. `POSTGRES_USER` is that instance's superuser, which is what lets the
+suites `CREATE DATABASE`; fine for a PoC whose entire dataset is a seed script,
+where a real deployment would issue a role with `CREATEDB` and nothing else.
+
+If Postgres is already installed locally, you can skip Docker entirely — with
+`initdb` and `pg_ctl` on `PATH` the suites stand up a private cluster on a unix
+socket and throw it away afterwards. `TEST_DATABASE_URL` takes precedence when
+both are available.
+
+`bun run demo:up` starts this same Postgres plus the mock and the service, so
+there is no need to run both `db:up` and `demo:up`.
+
+## Reproducing a green pipeline
+
+Two separate things, deliberately. **Hygiene** — no gate binaries, no mock, no
+service; a Postgres for the integration tests is the only thing it needs beyond
+`bun install`:
+
+```bash
+bun run db:up
+export TEST_DATABASE_URL='postgres://governance:governance@127.0.0.1:55432/governance'
 bun run lint:all && bun run check-types:all && bun run test:all && bun run gate:control-bytes
 ```
 
